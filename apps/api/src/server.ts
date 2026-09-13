@@ -92,15 +92,20 @@ export async function buildServer() {
     reply.send(err);
   });
 
+  // corsOrigins always has at least PUBLIC_URL in it (see config.ts's
+  // deriveCorsOrigins) — an unset CORS_ORIGINS never widens this to "allow
+  // any origin", which combined with credentials:true would otherwise be a
+  // real permissive-CORS gap.
   await app.register(cors, {
-    origin: corsOrigins.length ? corsOrigins : true,
+    origin: corsOrigins,
     credentials: true,
   });
 
-  // Registered globally-off: this app has had no inbound rate limiting at all
-  // until now. The only route that opts in is POST /api/onboarding/pair (see
-  // routes/onboarding-pairing.ts) — the one genuinely unauthenticated POST in
-  // the app, where a short-TTL random token is the only barrier to guessing.
+  // Registered globally-off: most of this app had no inbound rate limiting
+  // until now. Routes opt in individually — POST /api/onboarding/pair (see
+  // routes/onboarding-pairing.ts, the one genuinely unauthenticated POST in
+  // the app, where a short-TTL random token is the only barrier to guessing)
+  // and now /auth/callback and /auth/me (see auth/routes.ts).
   await app.register(rateLimit, { global: false });
   await app.register(cookie);
   await app.register(session, {

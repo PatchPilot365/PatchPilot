@@ -12,6 +12,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: closed a permissive-CORS gap where an unset `CORS_ORIGINS` fell
+  back to allowing any origin (with `credentials: true`) instead of the
+  configured web origins; `SameSite=Lax` on the session cookie already
+  narrowed the practical exposure, but this closes it outright. Also added
+  per-IP rate limiting to `/auth/callback` (30/min — bounds the cost of the
+  real MSAL token exchange each hit triggers) and `/auth/me` (120/min — well
+  above legitimate polling/shared-office-IP traffic), matching the pattern
+  already used for `POST /api/onboarding/pair`.
 - Security: patched `undici`, `fastify`, `find-my-way`, `fast-uri` (via new
   `pnpm.overrides` entries), and `react-router-dom` to their patched versions,
   clearing 14 `pnpm audit` advisories. All were in-range lockfile/override

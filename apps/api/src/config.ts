@@ -292,13 +292,27 @@ export function loadConfig(): Config {
 
 export const config = loadConfig();
 
-export const corsOrigins = config.CORS_ORIGINS.split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
 // PUBLIC_URL plus every EXTRA_WEB_ORIGINS entry, normalized (no trailing
 // slash) so an exact match against `${proto}://${host}` works — see
 // auth/origin.ts's resolveWebOrigin, the only consumer of this list.
-export const webOrigins = [config.PUBLIC_URL, ...config.EXTRA_WEB_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)].map(
-  (o) => o.replace(/\/+$/, ""),
-);
+export function deriveWebOrigins(cfg: Pick<Config, "PUBLIC_URL" | "EXTRA_WEB_ORIGINS">): string[] {
+  return [cfg.PUBLIC_URL, ...cfg.EXTRA_WEB_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)].map((o) =>
+    o.replace(/\/+$/, ""),
+  );
+}
+
+// Falls back to webOrigins (never empty — PUBLIC_URL always has a default)
+// when CORS_ORIGINS is unset, instead of leaving server.ts's cors
+// registration to treat an empty allowlist as "allow any origin" — which,
+// combined with that registration's credentials:true, would otherwise be a
+// real (if narrowly-scoped by SameSite=Lax cookies) permissive-CORS gap on
+// any deployment that never bothered to set CORS_ORIGINS explicitly.
+export function deriveCorsOrigins(cfg: Pick<Config, "CORS_ORIGINS">, webOrigins: string[]): string[] {
+  const explicit = cfg.CORS_ORIGINS.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return explicit.length ? explicit : webOrigins;
+}
+
+export const webOrigins = deriveWebOrigins(config);
+export const corsOrigins = deriveCorsOrigins(config, webOrigins);

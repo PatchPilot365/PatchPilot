@@ -229,14 +229,11 @@ try {
   const configModule = await import("./config.js");
   const fresh = configModule.loadConfig();
   Object.assign(configModule.config, fresh);
-  configModule.corsOrigins.length = 0;
-  configModule.corsOrigins.push(...fresh.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean));
+  const freshWebOrigins = configModule.deriveWebOrigins(fresh);
   configModule.webOrigins.length = 0;
-  configModule.webOrigins.push(
-    ...[fresh.PUBLIC_URL, ...fresh.EXTRA_WEB_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)].map((o) =>
-      o.replace(/\/+$/, ""),
-    ),
-  );
+  configModule.webOrigins.push(...freshWebOrigins);
+  configModule.corsOrigins.length = 0;
+  configModule.corsOrigins.push(...configModule.deriveCorsOrigins(fresh, freshWebOrigins));
 } catch (err) {
   console.error("[load-env] failed to reconcile config with loaded env:", err);
 }

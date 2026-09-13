@@ -279,6 +279,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     };
   }>(
     "/auth/callback",
+    // A valid `code` can't be brute-forced, but every hit before the
+    // provisioning check does real work (an MSAL token exchange against
+    // Microsoft) — bound that cost. 30/min per IP comfortably covers real
+    // logins/step-ups (including retries) for a whole office behind one NAT.
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const { code, state, error, error_description, admin_consent, tenant } = req.query;
       // Resolved once and reused throughout: this callback is only ever
@@ -1336,41 +1341,49 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get("/auth/me", async (req, reply) => {
-    // req.currentUser is resolved fresh on every request by resolveCurrentUser
-    // (see auth/current-user.ts) — if the row backing this session was disabled
-    // or deleted, that preHandler already destroyed the session before we get
-    // here, so seeing session.engineer without currentUser shouldn't happen in
-    // practice. Guard on both anyway rather than assume.
-    if (!req.session.engineer || !req.currentUser) {
-      // entraConfigured rides even the 401 body: the web AuthGate needs it
-      // BEFORE deciding whether to redirect to /auth/login at all — that
-      // redirect is a dead end on a fresh, unpaired instance (Microsoft
-      // rejects a blank client_id), so the SPA shows the pairing setup
-      // screen instead. See apps/web/src/lib/auth.tsx.
-      return reply.code(401).send({ authenticated: false, entraConfigured: config.ENTRA_CONFIGURED });
-    }
-    // Lazily issued rather than only at login: a session created before this
-    // field existed (a Redis-persisted session surviving an api restart, see
-    // the Session.csrfToken doc comment in types.d.ts) still gets a token the
-    // next time its owner loads the app, instead of being unable to submit
-    // any mutating request until they log out and back in.
-    if (!req.session.csrfToken) {
-      req.session.csrfToken = randomBytes(32).toString("hex");
-    }
-    return {
-      authenticated: true,
-      entraConfigured: config.ENTRA_CONFIGURED,
-      demoMode: config.DEMO_MODE,
-      engineer: {
-        ...req.session.engineer,
-        role: req.currentUser.role,
-        permissions: permissionsFor(req.currentUser.role),
-        theme: req.currentUser.theme,
-      },
-      csrfToken: req.session.csrfToken,
-    };
-  });
+  app.get(
+    "/auth/me",
+    // Polled every 5s by SetupPairing's onboarding screen, plus every
+    // engineer's normal page loads — all from possibly one shared office IP
+    // behind NAT. 120/min per IP is well above that legitimate volume while
+    // still bounding a runaway client or scripted hammering.
+    { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      // req.currentUser is resolved fresh on every request by resolveCurrentUser
+      // (see auth/current-user.ts) — if the row backing this session was disabled
+      // or deleted, that preHandler already destroyed the session before we get
+      // here, so seeing session.engineer without currentUser shouldn't happen in
+      // practice. Guard on both anyway rather than assume.
+      if (!req.session.engineer || !req.currentUser) {
+        // entraConfigured rides even the 401 body: the web AuthGate needs it
+        // BEFORE deciding whether to redirect to /auth/login at all — that
+        // redirect is a dead end on a fresh, unpaired instance (Microsoft
+        // rejects a blank client_id), so the SPA shows the pairing setup
+        // screen instead. See apps/web/src/lib/auth.tsx.
+        return reply.code(401).send({ authenticated: false, entraConfigured: config.ENTRA_CONFIGURED });
+      }
+      // Lazily issued rather than only at login: a session created before this
+      // field existed (a Redis-persisted session surviving an api restart, see
+      // the Session.csrfToken doc comment in types.d.ts) still gets a token the
+      // next time its owner loads the app, instead of being unable to submit
+      // any mutating request until they log out and back in.
+      if (!req.session.csrfToken) {
+        req.session.csrfToken = randomBytes(32).toString("hex");
+      }
+      return {
+        authenticated: true,
+        entraConfigured: config.ENTRA_CONFIGURED,
+        demoMode: config.DEMO_MODE,
+        engineer: {
+          ...req.session.engineer,
+          role: req.currentUser.role,
+          permissions: permissionsFor(req.currentUser.role),
+          theme: req.currentUser.theme,
+        },
+        csrfToken: req.session.csrfToken,
+      };
+    },
+  );
 
   // Self-service only — an engineer's own display preference, not something an
   // admin sets for someone else (contrast /api/users/:id's receiveJobAlerts).
