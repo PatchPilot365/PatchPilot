@@ -12,6 +12,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Upgraded `@azure/msal-node` from `^2.16.2` to `^6.0.0` (three major versions).
+  No production code changes needed — this codebase's confidential-client,
+  clientSecret-based, no-interactive-flow usage pattern is unaffected by any
+  breaking change across the v2-v6 span, and the token-cache-plugin contract
+  is unchanged, so existing cached engineer sessions remain valid.
+
 ## [0.18.1] - 2026-09-12
 
 - Fix the Jobs page subtitle incorrectly claiming remediations are simulated with no Microsoft API call, even on live (non-demo) tenants.
