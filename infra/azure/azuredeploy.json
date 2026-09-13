@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "374314292256748586"
+      "templateHash": "138973199626559930"
     }
   },
   "parameters": {
@@ -67,9 +67,9 @@
     },
     "repoUrl": {
       "type": "string",
-      "defaultValue": "https://github.com/mkheagerty-lab/PatchPilot.git",
+      "defaultValue": "https://github.com/PatchPilot365/PatchPilot.git",
       "metadata": {
-        "description": "Git repository URL to clone onto the VM. Point this at your own fork to deploy custom code instead of upstream mkheagerty-lab/PatchPilot."
+        "description": "Git repository URL to clone onto the VM. Point this at your own fork to deploy custom code instead of upstream PatchPilot365/PatchPilot."
       }
     },
     "repoRef": {

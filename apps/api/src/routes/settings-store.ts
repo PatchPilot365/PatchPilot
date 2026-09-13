@@ -19,7 +19,7 @@ export const demoSettings: Record<string, Record<string, unknown>> = {
     latestVersion: "0.2.0",
     latestReleaseNotes:
       "- Faster dashboard load times\n- Fixed a bug in the missing KBs export\n- Minor UI polish",
-    latestReleaseUrl: "https://github.com/mkheagerty-lab/PatchPilot/releases/tag/v0.2.0",
+    latestReleaseUrl: "https://github.com/PatchPilot365/PatchPilot/releases/tag/v0.2.0",
     latestPublishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     lastCheckedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
   },

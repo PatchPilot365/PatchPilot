@@ -1,6 +1,6 @@
 # PatchPilot
 
-[![CI](https://github.com/mkheagerty-lab/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/mkheagerty-lab/PatchPilot/actions/workflows/ci.yml)
+[![CI](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml)
 
 Self-hostable, multi-tenant **MSP patch management console**. PatchPilot bridges
 Microsoft Defender Vulnerability Management (MDVM) findings to actual remediation
@@ -103,7 +103,7 @@ and Caddy provisions the certificate automatically.
 
 ### Deploying to an Azure VM
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmkheagerty-lab%2FPatchPilot%2Fmain%2Finfra%2Fazure%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FPatchPilot365%2FPatchPilot%2Fmain%2Finfra%2Fazure%2Fazuredeploy.json)
 
 [`infra/azure/`](infra/azure/) has a one-command Bicep + cloud-init deployment:
 `az deployment group create` provisions the network, firewall, a static public

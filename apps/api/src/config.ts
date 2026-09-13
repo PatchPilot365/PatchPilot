@@ -75,7 +75,7 @@ const EnvSchema = z.object({
   GITHUB_RELEASES_URL: z
     .string()
     .url()
-    .default("https://api.github.com/repos/mkheagerty-lab/PatchPilot/releases/latest"),
+    .default("https://api.github.com/repos/PatchPilot365/PatchPilot/releases/latest"),
   DEMO_MODE: z
     .enum(["true", "false"])
     .default("true")
