@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.0] - 2026-09-13
+
 - First stable release. All Phase 0-5 features (multi-tenant onboarding,
   Defender/MDVM exposure sync, Winget/WUA/Live Response remediation,
   recurring schedules, RBAC/Users, Server Health, branding, reporting) are
