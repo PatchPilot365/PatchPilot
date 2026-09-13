@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [0.18.3] - 2026-09-13
+
 - Security: `api`/`worker`/`migrate` images no longer ship `vitest` (or the
   stale `esbuild` binaries it drags in transitively) into production — the
   first real run of the new Trivy scan above found the `worker` image
