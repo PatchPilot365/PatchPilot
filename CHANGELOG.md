@@ -12,6 +12,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: `api`/`worker`/`migrate` images no longer ship `vitest` (or the
+  stale `esbuild` binaries it drags in transitively) into production — the
+  first real run of the new Trivy scan above found the `worker` image
+  carrying 235 avoidable CVE findings this way, including a critical esbuild
+  one. `tsx` moved from `devDependencies` to `dependencies` in
+  `apps/api/package.json`, `apps/worker/package.json`, and
+  `packages/db/package.json` (it's a genuine runtime dependency — each
+  image's `CMD` runs the app through it directly), and `infra/Dockerfile.api`,
+  `infra/Dockerfile.worker`, `infra/Dockerfile.migrate` now install with
+  `--prod` so everything else in `devDependencies` is excluded.
 - Security: added Trivy container-image scanning to CI (`.github/workflows/ci.yml`)
   for every image this repo builds (`api`, `worker`, `web`, `migrate`, `updater`,
   `host-exec`) plus the pinned third-party images `docker-compose.yml` pulls
