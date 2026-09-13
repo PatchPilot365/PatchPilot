@@ -12,6 +12,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: added Trivy container-image scanning to CI (`.github/workflows/ci.yml`)
+  for every image this repo builds (`api`, `worker`, `web`, `migrate`, `updater`,
+  `host-exec`) plus the pinned third-party images `docker-compose.yml` pulls
+  directly (`caddy`, `postgres`, `redis`) — findings land in the repo's Code
+  Scanning tab (non-blocking) rather than failing PRs. Also added
+  `.github/dependabot.yml` for npm, Docker base images, and GitHub Actions.
+  Neither existed before; the host-patching-settings feature already patches
+  a deployed instance's own OS/Docker Engine, but nothing was watching the
+  app's own images or dependencies for known CVEs.
 - Security: closed a permissive-CORS gap where an unset `CORS_ORIGINS` fell
   back to allowing any origin (with `credentials: true`) instead of the
   configured web origins; `SameSite=Lax` on the session cookie already

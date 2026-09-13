@@ -53,3 +53,89 @@ jobs:
         run: |
           az bicep build --file infra/azure/main.bicep --outfile /tmp/azuredeploy.generated.json
           diff -u infra/azure/azuredeploy.json /tmp/azuredeploy.generated.json
+
+  # Builds every image this repo owns the Dockerfile for and scans it with
+  # Trivy — the app's own base images (node:22-alpine, nginx:1.27-alpine,
+  # alpine:3.20, docker:27-cli) get silently rebuilt upstream all the time,
+  # and nothing else in this repo ever checks whether that rebuild carries a
+  # fixed CVE that this pinned tag hasn't picked up yet. Non-blocking
+  # (exit-code 0): findings land in the repo's Code Scanning tab instead of
+  # failing PRs outright, since a brand-new scan on an unaudited image set
+  # would otherwise red-X every PR on day one. See host-patching-settings.ts
+  # for the separate, already-live mechanism that patches the HOST's own OS
+  # and Docker Engine — this job is the layer that covers PatchPilot's own
+  # application images, which that feature does not touch.
+  image-scan:
+    name: Scan container images for vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, worker, web, migrate, updater, host-exec]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.image }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.${{ matrix.image }}
+          push: false
+          load: true
+          tags: patchpilot-${{ matrix.image }}:scan
+
+      - name: Scan ${{ matrix.image }} image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: patchpilot-${{ matrix.image }}:scan
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Upload results to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
+  # Same idea as image-scan above, for the third-party images docker-compose.yml
+  # pulls directly rather than builds from a Dockerfile in this repo (see the
+  # comment on caddy's pinned tag there — these are deliberately not
+  # auto-bumped, so a scan is the only thing that will ever notice a fixable
+  # CVE in one of them). ollama/ollama:latest is excluded: it floats by
+  # design, so scanning today's pull says nothing about what's actually
+  # running on a given host.
+  base-image-scan:
+    name: Scan third-party base images for vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: caddy, ref: "caddy:2.11-alpine" }
+          - { name: postgres, ref: "postgres:17-alpine" }
+          - { name: redis, ref: "redis:7-alpine" }
+    steps:
+      - name: Scan ${{ matrix.image.name }} image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image.ref }}
+          format: sarif
+          output: trivy-${{ matrix.image.name }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Upload results to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image.name }}.sarif
+          category: trivy-${{ matrix.image.name }}

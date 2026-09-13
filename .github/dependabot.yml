@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Root covers the whole pnpm workspace (apps/*, packages/*) via the single
+  # root pnpm-lock.yaml — Dependabot resolves the workspace from there, no
+  # per-package entry needed. Grouped into one PR per week instead of one per
+  # dependency: a monorepo this size would otherwise bury the security PRs
+  # dependabot.yml exists for under routine minor-version noise.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+
+  # Tracks the FROM lines in infra/Dockerfile.* — catches a floating tag
+  # moving to a new minor/major (e.g. node:22-alpine -> node:24-alpine), but
+  # NOT a same-tag rebuild picking up a patched CVE within node:22-alpine
+  # itself. That gap is what the image-scan/base-image-scan CI jobs cover.
+  - package-ecosystem: "docker"
+    directory: "/infra"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
