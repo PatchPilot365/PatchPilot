@@ -14,8 +14,11 @@ COPY pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 
+# --prod excludes devDependencies (drizzle-kit, typescript) — tsx lives in
+# "dependencies" (not devDependencies) precisely so --prod keeps it: the CMD
+# below (`pnpm run migrate`) runs src/migrate.ts through it directly.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile=false --filter @patchpilot/db...
+    pnpm install --prod --frozen-lockfile=false --filter @patchpilot/db...
 
 # Copy sources.
 COPY packages/shared packages/shared
