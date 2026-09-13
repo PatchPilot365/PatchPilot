@@ -12,6 +12,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: added `Content-Security-Policy` and `Permissions-Policy` response
+  headers in `infra/Caddyfile` (both the primary domain block and the
+  catch-all on-demand-TLS block), closing the one gap found by a focused
+  security review of CSRF/session/RBAC/IDOR handling and response headers.
+  `script-src 'self'` with no inline scripts; `style-src 'self' 'unsafe-inline'`
+  since several components set inline styles; `img-src` allows `https:`/`data:`
+  for the customer-configurable Branding logo URL/upload.
+
 ## [0.18.3] - 2026-09-13
 
 - Security: `api`/`worker`/`migrate` images no longer ship `vitest` (or the
