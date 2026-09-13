@@ -12,6 +12,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- First stable release. All Phase 0-5 features (multi-tenant onboarding,
+  Defender/MDVM exposure sync, Winget/WUA/Live Response remediation,
+  recurring schedules, RBAC/Users, Server Health, branding, reporting) are
+  live and verified end to end; the CSRF/session-fixation/RBAC/IDOR security
+  review is closed out, including response-header hardening
+  (`Content-Security-Policy`, `Permissions-Policy`).
+
 ## [0.18.4] - 2026-09-13
 
 - Security: added `Content-Security-Policy` and `Permissions-Policy` response
