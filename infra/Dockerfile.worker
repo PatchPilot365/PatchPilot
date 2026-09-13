@@ -41,8 +41,15 @@ COPY packages/graph/package.json packages/graph/
 COPY packages/ai/package.json packages/ai/
 COPY apps/worker/package.json apps/worker/
 
+# --prod excludes devDependencies (vitest, typescript) across the whole
+# filtered workspace subgraph — without it, vitest's transitive esbuild
+# binaries (three stale copies, one per resolution) shipped in this image
+# with no runtime purpose, accounting for the bulk of this image's CVE
+# findings in CI's image-scan job. tsx lives in "dependencies" (not
+# devDependencies) precisely so --prod keeps it: the CMD below runs the app
+# through it directly.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile=false --filter @patchpilot/worker...
+    pnpm install --prod --frozen-lockfile=false --filter @patchpilot/worker...
 
 COPY packages/shared packages/shared
 COPY packages/db packages/db

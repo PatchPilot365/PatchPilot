@@ -16,8 +16,12 @@ COPY packages/graph/package.json packages/graph/
 COPY packages/ai/package.json packages/ai/
 COPY apps/api/package.json apps/api/
 
+# --prod excludes devDependencies (vitest, typescript, the test-only postgres
+# driver) across the whole filtered workspace subgraph. tsx lives in
+# "dependencies" (not devDependencies) precisely so --prod keeps it: the CMD
+# below runs the app through it directly.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile=false --filter @patchpilot/api...
+    pnpm install --prod --frozen-lockfile=false --filter @patchpilot/api...
 
 # Copy sources. apps/api depends on both of these directly (see its
 # package.json) — omitting either one fails pnpm's workspace resolution
