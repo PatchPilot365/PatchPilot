@@ -12,6 +12,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: patched `undici`, `fastify`, `find-my-way`, `fast-uri` (via new
+  `pnpm.overrides` entries), and `react-router-dom` to their patched versions,
+  clearing 14 `pnpm audit` advisories. All were in-range lockfile/override
+  bumps with no `package.json` dependency-range or code changes required.
+
 ## [0.18.2] - 2026-09-13
 
 - Upgraded `@azure/msal-node` from `^2.16.2` to `^6.0.0` (three major versions).
