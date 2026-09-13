@@ -10,8 +10,15 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      # Restricted to minor/patch: these rarely break APIs on purpose, so
+      # batching them into one weekly PR is safe. A major bump (e.g. zod
+      # 3->4, vite 6->8) is excluded from the group and instead opens its
+      # own individual PR — those need one-at-a-time review/testing, not a
+      # 15-package all-or-nothing bundle (PR #84 grouped 15 majors together
+      # and failed CI outright).
       npm-dependencies:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Tracks the FROM lines in infra/Dockerfile.* — catches a floating tag
   # moving to a new minor/major (e.g. node:22-alpine -> node:24-alpine), but
