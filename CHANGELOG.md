@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [0.18.2] - 2026-09-13
+
 - Upgraded `@azure/msal-node` from `^2.16.2` to `^6.0.0` (three major versions).
   No production code changes needed — this codebase's confidential-client,
   clientSecret-based, no-interactive-flow usage pattern is unaffected by any
