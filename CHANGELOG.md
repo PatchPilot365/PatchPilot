@@ -16,6 +16,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   `pnpm.overrides` entries), and `react-router-dom` to their patched versions,
   clearing 14 `pnpm audit` advisories. All were in-range lockfile/override
   bumps with no `package.json` dependency-range or code changes required.
+- Security: upgraded `drizzle-orm` (`^0.38.3` → `^0.45.2`, fixes a real SQL-injection
+  advisory) and `nodemailer` (`^6.9.16` → `^10.0.9`, fixes ~10 advisories,
+  dropped the now-redundant `@types/nodemailer`). Neither vulnerable pattern
+  was actually reachable in this codebase (no `sql.identifier()`/dynamic
+  `.as()` calls; alert-email recipients are always admin-configured, never
+  attacker-influenceable) — upgraded anyway for defense-in-depth. No breaking
+  changes applied to how either library is used here; clears 14 more `pnpm
+  audit` advisories (27 → 13 remaining, all in dev-only build tooling never
+  shipped to production).
 
 ## [0.18.2] - 2026-09-13
 
