@@ -28,8 +28,8 @@ param allowedSshSourceIp string = '*'
 @description('VM size. Standard_B2as_v2 (2 vCPU/8GB) is comfortable for the full stack with AI features off. Use Standard_B4as_v2 (4 vCPU/16GB) if you plan to enable local AI (Ollama + llama3.1:8b).')
 param vmSize string = 'Standard_B2as_v2'
 
-@description('Git repository URL to clone onto the VM. Point this at your own fork to deploy custom code instead of upstream mkheagerty-lab/PatchPilot.')
-param repoUrl string = 'https://github.com/mkheagerty-lab/PatchPilot.git'
+@description('Git repository URL to clone onto the VM. Point this at your own fork to deploy custom code instead of upstream PatchPilot365/PatchPilot.')
+param repoUrl string = 'https://github.com/PatchPilot365/PatchPilot.git'
 
 @description('Git branch or tag to check out after cloning repoUrl.')
 param repoRef string = 'main'

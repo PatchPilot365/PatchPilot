@@ -11,7 +11,7 @@ icon, Bash) — it has `az`, `git`, and `openssl` pre-installed.
 
 ## Deploy
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmkheagerty-lab%2FPatchPilot%2Fmain%2Finfra%2Fazure%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FPatchPilot365%2FPatchPilot%2Fmain%2Finfra%2Fazure%2Fazuredeploy.json)
 
 Click the button, sign in, and hit deploy — every field is already defaulted
 (`location` is Australia East, a unique `dnsLabel` is generated for you,
