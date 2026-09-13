@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [0.18.4] - 2026-09-13
+
 - Security: added `Content-Security-Policy` and `Permissions-Policy` response
   headers in `infra/Caddyfile` (both the primary domain block and the
   catch-all on-demand-TLS block), closing the one gap found by a focused
