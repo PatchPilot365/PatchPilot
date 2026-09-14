@@ -1,0 +1,27 @@
+title: PatchPilot Docs
+description: >-
+  Documentation for PatchPilot — a self-hosted, multi-tenant Windows patch
+  management console for MSPs.
+
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+
+url: "https://patchpilot365.github.io"
+baseurl: "/PatchPilot"
+
+color_scheme: light
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  "PatchPilot on GitHub":
+    - "https://github.com/PatchPilot365/PatchPilot"
+aux_links_new_tab: true
+
+exclude:
+  - internal/
+  - node_modules/
+  - vendor/
+  - Gemfile
+  - Gemfile.lock
