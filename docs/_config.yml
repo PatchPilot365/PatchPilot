@@ -7,8 +7,8 @@ remote_theme: just-the-docs/just-the-docs
 plugins:
   - jekyll-remote-theme
 
-url: "https://patchpilot365.github.io"
-baseurl: "/PatchPilot"
+url: "https://docs.patchpilot365.com"
+baseurl: ""
 
 color_scheme: light
 search_enabled: true
