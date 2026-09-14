@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.2] - 2026-09-14
+
 - Fixed `Deploy-PatchPilot.ps1` silently skipping the pairing phone-home on a
   re-run against an already-created Entra app registration: its still-valid
   client secret was correctly reused, but Entra ID can never return a
