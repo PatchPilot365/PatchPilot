@@ -1,10 +1,10 @@
 ---
-title: Navigating PatchPilot
+title: Navigating PatchPilot365
 nav_order: 6
 has_children: true
 ---
 
-# Navigating PatchPilot
+# Navigating PatchPilot365
 
 Once signed in, the sidebar groups every page into five sections. This
 section of the docs has one page per group, each with one heading per page
@@ -31,7 +31,7 @@ page hides or disables the specific *actions* a **Reader** can't perform
 (dispatching a fix, editing a schedule, and so on), so a read-only user can
 still see everything and understand what happened without being offered
 buttons that would just fail. See
-[Requirements: Roles inside PatchPilot]({{ "/requirements/#roles-inside-patchpilot" | relative_url }})
+[Requirements: Roles inside PatchPilot365]({{ "/requirements/#roles-inside-patchpilot365" | relative_url }})
 for the full role breakdown.
 
 ## Help and the AI assistant
@@ -44,5 +44,5 @@ for the full role breakdown.
   what's currently on screen using the same RBAC-scoped data the page
   itself already has access to — it's never given a raw database
   connection. See
-  [AI features]({{ "/getting-started/production-deploy/#ai-features-optional" | relative_url }})
+  [AI features]({{ "/getting-started/manual-deployment/#ai-features-optional" | relative_url }})
   for how to turn it on.

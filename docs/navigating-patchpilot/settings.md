@@ -1,6 +1,6 @@
 ---
 title: Settings
-parent: Navigating PatchPilot
+parent: Navigating PatchPilot365
 nav_order: 5
 ---
 
@@ -23,7 +23,7 @@ Recommendations, the Dashboard).
 
 ## License
 
-PatchPilot's vendor license key. This gates whether the instance can write
+PatchPilot365's vendor license key. This gates whether the instance can write
 at all, and sizes the Live Response device pool your tenants share — see
 [Requirements]({{ "/requirements/" | relative_url }}) for how licensing
 degrades gracefully when a key is missing or expired.
@@ -48,7 +48,7 @@ columns:
 
 - **Consent**: Active / Pending / Expired — the GDAP relationship itself.
 - **Reachability**: Reachable / Needs consent / Throttled / Unreachable /
-  Not probed — whether PatchPilot can actually call Graph for this tenant
+  Not probed — whether PatchPilot365 can actually call Graph for this tenant
   right now, refreshed by **Discover** (per-tenant) or the page's
   re-probe-everything action.
 
@@ -57,12 +57,12 @@ GDAP relationship.
 
 ## Updates
 
-Check for new PatchPilot releases and trigger the self-update sidecar to
+Check for new PatchPilot365 releases and trigger the self-update sidecar to
 apply them.
 
 ## Users
 
-*"Who can sign in to PatchPilot, and what their role lets them do here."*
+*"Who can sign in to PatchPilot365, and what their role lets them do here."*
 Two tabs:
 
 - **People** — the engineer list: role assignment, write-access toggle
@@ -75,7 +75,7 @@ Two tabs:
 > Only this page requires the `users:manage` permission (Admin role) to
 > open at all. Every other Settings page is visible to every role, with
 > individual write actions hidden or disabled per role instead. See
-> [Requirements: Roles inside PatchPilot]({{ "/requirements/#roles-inside-patchpilot" | relative_url }}).
+> [Requirements: Roles inside PatchPilot365]({{ "/requirements/#roles-inside-patchpilot365" | relative_url }}).
 
 ## Windows Update Policies
 

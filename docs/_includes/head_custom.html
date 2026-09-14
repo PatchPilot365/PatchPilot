@@ -1,0 +1,14 @@
+<link rel="icon" type="image/png" href="{{ '/assets/images/logo.png' | relative_url }}">
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: jtd.getTheme() === "patchpilot-dark" ? "dark" : "base",
+    themeVariables: {
+      primaryColor: "#4f46e5",
+      primaryTextColor: "#fff",
+      lineColor: "#0ea5e9"
+    }
+  });
+</script>

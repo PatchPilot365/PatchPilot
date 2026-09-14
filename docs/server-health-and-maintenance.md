@@ -6,9 +6,9 @@ nav_order: 7
 # Server Health & Maintenance
 
 *"Live resource usage, service/queue/scheduler status, and confirmed
-restart actions for this PatchPilot instance."* This is the operational
-page for keeping a self-hosted instance running — found at **Settings >
-Server Health**, three tabs.
+restart actions for this PatchPilot365 instance."* This is the operational
+page for keeping an instance running — whether it's an Azure Deployment or
+a self-hosted install — found at **Settings > Server Health**, three tabs.
 
 ## Resources
 
@@ -77,5 +77,5 @@ controlled by two environment variables:
 
 See [Requirements]({{ "/requirements/" | relative_url }}) for the full
 environment-variable reference, and
-[Azure Deploy]({{ "/getting-started/azure-deploy/" | relative_url }}) for
+[Azure Deployment]({{ "/getting-started/azure-deploy/" | relative_url }}) for
 the Azure-specific update and troubleshooting commands.

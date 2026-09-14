@@ -1,6 +1,6 @@
 ---
 title: Operations
-parent: Navigating PatchPilot
+parent: Navigating PatchPilot365
 nav_order: 1
 ---
 
@@ -36,7 +36,7 @@ recommendations behave like the Vulnerabilities page.
 
 ## Device Groups
 
-PatchPilot-native groups of devices, used to scope a recurring schedule to a
+PatchPilot365-native groups of devices, used to scope a recurring schedule to a
 subset of the fleet instead of every device. Assign devices to a group from
 the Devices page, then reference the group when creating a schedule.
 
@@ -50,7 +50,7 @@ including its complete software inventory and feature-update target status.
 
 ## Jobs
 
-Every remediation job PatchPilot has dispatched or is about to — the
+Every remediation job PatchPilot365 has dispatched or is about to — the
 worker's own queue and execution history, independent of which finding or
 schedule triggered it. Shows status, target devices, channel used, and
 (where one fix also closes multiple CVEs) which other findings the same

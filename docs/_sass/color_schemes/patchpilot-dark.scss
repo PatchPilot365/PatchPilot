@@ -1,0 +1,9 @@
+// PatchPilot365 brand palette on top of just-the-docs' default dark scheme.
+// Upstream dark.scss assigns these WITHOUT `!default`, so overrides must
+// come AFTER the import to win.
+@import "./color_schemes/dark";
+
+$body-background-color: #020617; // matches the in-app dark-mode body
+$sidebar-color: #0b1020; // matches the in-app dark-mode background
+$link-color: #38bdf8; // sky-400 — lightened from brand secondary #0ea5e9 for contrast
+$btn-primary-color: #6366f1; // indigo-500 — lightened from brand primary #4f46e5 for contrast

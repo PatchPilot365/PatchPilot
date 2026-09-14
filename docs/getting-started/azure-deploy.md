@@ -1,17 +1,27 @@
 ---
-title: Azure One-Click Deploy
+title: Azure Deployment
 parent: Getting Started
-nav_order: 3
+nav_order: 1
 ---
 
-# Azure one-click deploy
+# Azure Deployment
 
-A Bicep template plus a cloud-init file stand up a complete PatchPilot
-instance on a single Ubuntu VM — network, firewall, a static public IP, and
-the VM itself, which provisions itself (installs Docker, clones the repo,
-writes `.env`, runs `docker compose up`) on first boot. No SSH is required
-for setup or normal day-to-day operation; ongoing commands go through
-`az vm run-command invoke` instead.
+The primary, supported way to run PatchPilot365: a Bicep template plus a
+cloud-init file stand up a complete instance on a single Ubuntu VM —
+network, firewall, a static public IP, and the VM itself, which provisions
+itself (installs Docker, clones the repo, writes `.env`, runs
+`docker compose up`) on first boot. No SSH is required for setup or normal
+day-to-day operation; ongoing commands go through `az vm run-command invoke`
+instead.
+
+{: .warning }
+> **This deploys billable Azure resources into your own subscription.**
+> Beyond the Azure subscription itself, the template creates a virtual
+> machine (`Standard_B2as_v2`, 2 vCPU / 8GB RAM, Ubuntu Server 22.04 LTS),
+> a 64GB Standard SSD managed disk, and a Standard **static public IP** —
+> all billed to your tenant for as long as the deployment exists. The
+> virtual network, network security group, and network interface are free
+> constructs, and no storage account or managed database is created.
 
 Run the commands below from [Azure Cloud Shell](https://portal.azure.com)
 (the `>_` icon in the top bar) — it already has `az`, `git`, and `openssl`
@@ -99,7 +109,7 @@ az vm run-command invoke -g patchpilot-rg -n patchpilot-vm \
 ```
 
 Or use the in-app **Settings > Updates** page — see
-[Navigating PatchPilot: Settings]({{ "/navigating-patchpilot/settings/" | relative_url }}).
+[Navigating PatchPilot365: Settings]({{ "/navigating-patchpilot/settings/" | relative_url }}).
 
 ## Backups
 
@@ -124,3 +134,9 @@ A container stuck restarting almost always shows its reason in the last few
 log lines. Full technical detail on the Azure template lives in
 [`infra/azure/README.md`](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md)
 in the repository.
+
+## Next step
+
+Once the deployment finishes, continue to
+[Pairing]({{ "/getting-started/pairing/" | relative_url }}) to connect it to
+a real Microsoft 365 tenant.
