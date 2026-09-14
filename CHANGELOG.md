@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.3] - 2026-09-14
+
 - Removed Azure Cloud Shell as an onboarding/pairing method from the pairing
   screen and the App Registration settings page - Entra Security Defaults and
   Conditional Access policies (now the common case) block Cloud Shell's
