@@ -12,6 +12,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Fixed `Deploy-PatchPilot.ps1` silently skipping the pairing phone-home on a
+  re-run against an already-created Entra app registration: its still-valid
+  client secret was correctly reused, but Entra ID can never return a
+  secret's value after creation, leaving nothing to send and no error - the
+  script now prompts to rotate the secret when pairing is still needed, and
+  the final summary calls out pairing status on its own line instead of it
+  being buried among 15 other steps.
+- Fixed `Deploy-PatchPilot.ps1` crashing at `.env`-writing time under Windows
+  PowerShell 5.1 (`RandomNumberGenerator` does not contain a method named
+  `'Fill'`) - that static method only exists on .NET Core/.NET 5+, not the
+  .NET Framework runtime `powershell.exe` uses.
+- Doubled the server's pairing-token TTL (30 -> 60 minutes): a first-ever
+  run's Microsoft.Graph module install alone can eat a large chunk of the
+  old window before the script ever reaches the pairing step.
+
 ## [1.0.0] - 2026-09-13
 
 - First stable release. All Phase 0-5 features (multi-tenant onboarding,
