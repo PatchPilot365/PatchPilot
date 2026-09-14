@@ -1,6 +1,7 @@
 ---
 title: Server Health & Maintenance
 nav_order: 7
+permalink: /server-health-and-maintenance/
 ---
 
 # Server Health & Maintenance

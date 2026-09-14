@@ -1,6 +1,7 @@
 ---
 title: Known Issues
 nav_order: 5
+permalink: /known-issues/
 ---
 
 # Known Issues
