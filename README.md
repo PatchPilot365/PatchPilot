@@ -1,7 +1,7 @@
 # PatchPilot
 
 [![CI](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-patchpilot365.github.io-blue)](https://patchpilot365.github.io/PatchPilot/)
+[![Docs](https://img.shields.io/badge/docs-docs.patchpilot365.com-blue)](https://docs.patchpilot365.com/)
 
 Self-hostable, multi-tenant **MSP patch management console**. PatchPilot bridges
 Microsoft Defender Vulnerability Management (MDVM) findings to actual remediation
