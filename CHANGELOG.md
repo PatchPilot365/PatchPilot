@@ -12,6 +12,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Removed Azure Cloud Shell as an onboarding/pairing method from the pairing
+  screen and the App Registration settings page - Entra Security Defaults and
+  Conditional Access policies (now the common case) block Cloud Shell's
+  sign-in from satisfying those policies, so it no longer completes the
+  pairing script reliably. Both pages now show a single PowerShell
+  download-and-run path.
+
 ## [1.0.2] - 2026-09-14
 
 - Fixed `Deploy-PatchPilot.ps1` silently skipping the pairing phone-home on a
