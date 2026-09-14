@@ -15,7 +15,13 @@
   var DARK = "patchpilot-dark";
   var STORAGE_KEY = "pp-color-scheme";
 
+  // jtd.getTheme() only returns the text after the LAST hyphen in the
+  // stylesheet filename (e.g. "dark", not "patchpilot-dark"), so it can't
+  // be compared against our full scheme names — track state ourselves.
+  var current = LIGHT;
+
   function apply(theme) {
+    current = theme;
     jtd.setTheme(theme);
     document.querySelectorAll(".pp-theme-toggle-icon").forEach(function (icon) {
       icon.textContent = theme === DARK ? "☀️" : "🌙";
@@ -27,11 +33,11 @@
 
   var saved = null;
   try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) {}
-  apply(saved === LIGHT || saved === DARK ? saved : jtd.getTheme());
+  apply(saved === LIGHT || saved === DARK ? saved : LIGHT);
 
   document.querySelectorAll(".pp-theme-toggle").forEach(function (btn) {
     jtd.addEvent(btn, "click", function () {
-      var next = jtd.getTheme() === DARK ? LIGHT : DARK;
+      var next = current === DARK ? LIGHT : DARK;
       try { localStorage.setItem(STORAGE_KEY, next); } catch (e) {}
       apply(next);
     });
