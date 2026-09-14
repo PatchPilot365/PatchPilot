@@ -153,7 +153,7 @@ az vm run-command invoke -g patchpilot-rg -n patchpilot-vm \
 A `caddy` (or `backup`) container stuck restarting with a "not a directory:
 are you trying to mount a directory onto a file" error means something is
 bind-mounting a file from a path that doesn't exist as expected on the host
-— see the 2026-09-05 entry in [docs/incidents.md](../../docs/incidents.md#bug-1--updater-bind-mounted-the-repo-checkout-at-a-path-that-didnt-match-its-real-location-on-the-host)
+— see the 2026-09-05 entry in [docs/internal/incidents.md](../../docs/internal/incidents.md#bug-1--updater-bind-mounted-the-repo-checkout-at-a-path-that-didnt-match-its-real-location-on-the-host)
 for the exact mechanism (a mismatch between where the `updater` sidecar
 mounts the checkout and where it actually lives on the host, `/opt/patchpilot`
 — that path must stay identical on both sides of the mount everywhere it's
