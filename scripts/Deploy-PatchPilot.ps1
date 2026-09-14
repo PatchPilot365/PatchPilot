@@ -226,8 +226,20 @@ function Ensure-Folder {
 }
 
 function New-Base64Key {
+    # RandomNumberGenerator's static ::Fill(byte[]) only exists on .NET
+    # Core/.NET 5+ - it throws MethodNotFound under Windows PowerShell 5.1
+    # (.NET Framework), which is what `powershell.exe` (as opposed to `pwsh`)
+    # runs on and is exactly how this script's own usage instructions tell
+    # people to invoke it. ::Create() + the instance .GetBytes() method is
+    # the one API shape both runtimes have always supported.
     $bytes = [byte[]]::new(32)
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
     return [Convert]::ToBase64String($bytes)
 }
 
