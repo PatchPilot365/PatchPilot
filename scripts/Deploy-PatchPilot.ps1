@@ -226,8 +226,20 @@ function Ensure-Folder {
 }
 
 function New-Base64Key {
+    # RandomNumberGenerator's static ::Fill(byte[]) only exists on .NET
+    # Core/.NET 5+ - it throws MethodNotFound under Windows PowerShell 5.1
+    # (.NET Framework), which is what `powershell.exe` (as opposed to `pwsh`)
+    # runs on and is exactly how this script's own usage instructions tell
+    # people to invoke it. ::Create() + the instance .GetBytes() method is
+    # the one API shape both runtimes have always supported.
     $bytes = [byte[]]::new(32)
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
     return [Convert]::ToBase64String($bytes)
 }
 
@@ -829,6 +841,18 @@ $transcriptPath = $null
 $csvPath = $null
 $envPath = $null
 $secret = $null
+# Computed this early (not just right before the pairing POST) so step [7/15]'s
+# client-secret check can see it too - a live-observed failure mode is a
+# re-run against an already-created app registration silently reusing its
+# still-valid secret, whose VALUE Entra ID can never return again. That left
+# step [15/15] with no secret to send and no way to complete pairing, while
+# every earlier step still printed success - the script as a whole reported
+# "Done!" with pairing never having happened, four separate times in a row on
+# one real deployment, with no consumed pairing token to show for it.
+$pairingRequested = $InstanceUrl -and $PairingToken `
+    -and -not ($InstanceUrl.StartsWith("{{") -and $InstanceUrl.EndsWith("}}")) `
+    -and -not ($PairingToken.StartsWith("{{") -and $PairingToken.EndsWith("}}"))
+$paired = $false
 
 try {
     Ensure-Folder -Path $OutputFolder
@@ -1482,7 +1506,24 @@ try {
         Write-WarningMessage "RotateClientSecret specified. A new secret will be generated."
     }
 
-    if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret) {
+    # An existing secret proves a *usable* app registration exists, but its
+    # value can never be retrieved from Entra ID again - and step [15/15]
+    # needs the real value to hand to the instance. Reusing it silently would
+    # mean pairing can never complete on this run, with no error anywhere.
+    $needsFreshSecretForPairing = $false
+    if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret -and $pairingRequested) {
+        Write-WarningMessage "Existing client secret values cannot be retrieved from Entra ID, but this instance still needs pairing."
+        $rotateQuery = "App registration $($app.AppId) already has a valid secret, but Entra ID never returns a secret's value after creation, so the existing one can't be sent to $InstanceUrl. " +
+            "Generating a new one now lets pairing complete. If this SAME app registration is also used by another PatchPilot instance that's already paired, that instance's stored secret will stop working until its .env is updated with the new value."
+        if ($PSCmdlet.ShouldContinue($rotateQuery, "Generate a new client secret to complete pairing?")) {
+            $needsFreshSecretForPairing = $true
+        }
+        else {
+            Write-WarningMessage "Keeping the existing secret. Pairing will be skipped this run - re-run and accept this prompt (or pass -RotateClientSecret) when ready."
+        }
+    }
+
+    if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret -and -not $needsFreshSecretForPairing) {
         Write-Success "Existing valid PatchPilot client secret found. No new secret generated."
         Write-WarningMessage "Existing client secret values cannot be retrieved from Entra ID. Use -RotateClientSecret if you need a new value for .env."
     }
@@ -1887,15 +1928,19 @@ LOG_LEVEL=info
     # URI or the localhost fallback near the top of the script), and it's
     # used earlier for the app registration itself - not specific to this
     # phone-home step the way $InstanceUrl/$PairingToken are.
-    $pairingRequested = $InstanceUrl -and $PairingToken `
-        -and -not ($InstanceUrl.StartsWith("{{") -and $InstanceUrl.EndsWith("}}")) `
-        -and -not ($PairingToken.StartsWith("{{") -and $PairingToken.EndsWith("}}"))
+    #
+    # $pairingRequested itself is computed once, near the very top of the
+    # script (before step [7/15]'s client-secret check needs to see it too) -
+    # not re-derived here.
 
     if (-not $pairingRequested) {
         Write-Host "  Skipped - no -InstanceUrl/-PairingToken supplied (self-hosted .env config above is authoritative)." -ForegroundColor DarkGray
     }
     elseif (-not $secret) {
-        Write-WarningMessage "Skipped pairing because no new client secret was generated. Re-run with -RotateClientSecret to pair."
+        # Reachable when step [7/15]'s rotation prompt was declined (or this
+        # run used -WhatIf) - the app registration exists but no secret VALUE
+        # is available to send.
+        Write-WarningMessage "Skipped pairing because no client secret is available to send. Re-run and accept the secret-rotation prompt (or pass -RotateClientSecret) to pair."
     }
     else {
         # This is the script's first-ever outbound HTTP call to anything other
@@ -1972,9 +2017,35 @@ LOG_LEVEL=info
             try {
                 Invoke-RestMethod -Method Post -Uri "$InstanceUrl/api/onboarding/pair" -Body $pairingBody -ContentType "application/json" | Out-Null
                 Write-Success "Paired with $InstanceUrl - it will restart momentarily with these credentials."
+                $paired = $true
             }
             catch {
+                # $_.Exception.Message alone is usually just ".NET's generic
+                # 'The remote server returned an error: (400) Bad Request.'" -
+                # the server's actual JSON body (e.g. {"error":"invalid_or_expired_token"},
+                # see onboarding-pairing.ts) is what actually explains the
+                # failure, and was silently discarded here before. Read it
+                # back out so a real failure isn't just a shrug in yellow text.
+                $serverMessage = $null
+                if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+                    $serverMessage = $_.ErrorDetails.Message
+                }
+                elseif ($_.Exception.Response) {
+                    try {
+                        $responseStream = $_.Exception.Response.GetResponseStream()
+                        $responseStream.Position = 0
+                        $reader = New-Object System.IO.StreamReader($responseStream)
+                        $serverMessage = $reader.ReadToEnd()
+                    }
+                    catch {
+                        # Best effort only - the generic message below still prints.
+                    }
+                }
+
                 Write-WarningMessage "Pairing request to $InstanceUrl failed: $($_.Exception.Message)"
+                if (-not [string]::IsNullOrWhiteSpace($serverMessage)) {
+                    Write-WarningMessage "Server response: $serverMessage"
+                }
                 Write-WarningMessage "The app registration above was still created successfully. Re-run with the same -InstanceUrl/-PairingToken to retry pairing, or configure the instance manually with the .env values above."
             }
         }
@@ -2000,6 +2071,19 @@ LOG_LEVEL=info
     }
     else {
         Write-Host "  Env file:          Not written this run"
+    }
+
+    # Called out on its own line, in red when it matters - not just a `[!]`
+    # buried among 15 mostly-green steps above, which is exactly how a real
+    # deployment reported "Done!" four separate times with pairing never
+    # having actually happened.
+    if ($pairingRequested) {
+        if ($paired) {
+            Write-Host "  Pairing:           Completed - $InstanceUrl will restart shortly with these credentials." -ForegroundColor Green
+        }
+        else {
+            Write-Host "  Pairing:           NOT COMPLETED - $InstanceUrl is still waiting on its setup page." -ForegroundColor Red
+        }
     }
 
     if ($transcriptPath) {

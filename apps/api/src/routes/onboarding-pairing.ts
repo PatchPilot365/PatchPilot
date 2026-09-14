@@ -35,7 +35,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // and `node dist/index.js` (prod) without an env var or build-time copy step.
 const DEPLOY_SCRIPT_PATH = join(__dirname, "../../../../scripts/Deploy-PatchPilot.ps1");
 
-const PAIRING_TOKEN_TTL_MS = 30 * 60 * 1000;
+// A first-ever run installs the Microsoft.Graph PowerShell module (which can
+// take 5-15+ minutes on a machine with nothing cached), then does interactive
+// sign-in, GDAP enumeration, and role-assignment loops with backoff before
+// ever reaching the pairing POST at the very end - comfortably over 30
+// minutes on a slow first run.
+const PAIRING_TOKEN_TTL_MS = 60 * 60 * 1000;
 
 const pairBodySchema = z.object({
   token: z.string().min(1),
