@@ -2,13 +2,25 @@
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
-  mermaid.initialize({
-    startOnLoad: true,
-    theme: jtd.getTheme() === "patchpilot-dark" ? "dark" : "base",
-    themeVariables: {
-      primaryColor: "#4f46e5",
-      primaryTextColor: "#fff",
-      lineColor: "#0ea5e9"
-    }
-  });
+  (function () {
+    // jtd.getTheme() only returns the text after the LAST hyphen in the
+    // stylesheet filename (e.g. "dark", not "patchpilot-dark"), so compare
+    // against that short suffix. Read localStorage directly (rather than
+    // waiting on nav_footer_custom.html's script) so a returning visitor's
+    // saved dark-mode preference is honored on first paint, not just after
+    // the toggle button's own init runs.
+    var saved = null;
+    try { saved = localStorage.getItem("pp-color-scheme"); } catch (e) {}
+    var isDark = saved ? saved === "patchpilot-dark" : jtd.getTheme() === "dark";
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: isDark ? "dark" : "base",
+      themeVariables: {
+        primaryColor: "#4f46e5",
+        primaryTextColor: "#fff",
+        lineColor: "#0ea5e9"
+      }
+    });
+  })();
 </script>
