@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
-import { CopyButton } from "../../components/ui";
 import { DEFAULT_LOGO_URL, PRODUCT_NAME } from "../../lib/branding";
 
 /**
@@ -18,15 +17,21 @@ import { DEFAULT_LOGO_URL, PRODUCT_NAME } from "../../lib/branding";
  * single-use pairing token baked into it — see
  * apps/api/src/routes/onboarding-pairing.ts.
  *
- * The two-option layout below (Cloud Shell recommended, PowerShell manual)
- * deliberately mirrors Get Started > Step 1 on the authenticated App
- * Registration page (apps/web/src/pages/setup/AppRegistration.tsx) — same
- * buttons, same order — since this screen runs the exact same script for
- * the exact same reason, just before a session exists to reach that page.
+ * The download button below deliberately mirrors Get Started > Step 1 on the
+ * authenticated App Registration page
+ * (apps/web/src/pages/setup/AppRegistration.tsx) — same button, same wording
+ * — since this screen runs the exact same script for the exact same reason,
+ * just before a session exists to reach that page.
+ *
+ * Azure Cloud Shell used to be offered here as a no-local-PowerShell
+ * alternative, but tenants with Security Defaults or Conditional Access
+ * policies enabled (the common case now) block Cloud Shell's sign-in from
+ * satisfying those policies, so it no longer works reliably enough to
+ * recommend — see Deploy-PatchPilot.ps1's own Cloud Shell detection/fallback
+ * comments for the underlying auth mechanics that stopped panning out.
  */
 export function SetupPairing() {
   const queryClient = useQueryClient();
-  const cloudShellCommand = `& ([scriptblock]::Create((irm "${window.location.origin}/api/onboarding/pairing-script")))`;
 
   // Once the customer's admin runs the script, POST /api/onboarding/pair
   // restarts the api process (see onboarding-pairing.ts) with real Entra
@@ -62,45 +67,16 @@ export function SetupPairing() {
           tenant yet. Run the installer once as a Global Administrator — it
           creates the Entra app, configures read-only permissions, grants
           admin consent for them, and pairs directly with this instance, all
-          in one run. Choose whichever matches how you&apos;re set up:
+          in one run.
         </p>
 
-        <div className="mt-4 rounded-lg border border-sky-200 dark:border-sky-900/50 bg-sky-50/50 p-3">
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Option 1: Azure Cloud Shell
-            <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-500/15 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:text-sky-300">
-              Recommended
-            </span>
+        <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 p-3">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Run the installer
           </p>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            No local PowerShell needed, and your tenant ID is detected
-            automatically from the signed-in session. Paste this:
-          </p>
-          <div className="mt-1.5 flex items-start gap-2">
-            <code className="flex-1 whitespace-pre-wrap break-all rounded bg-slate-100 dark:bg-slate-800 px-2 py-1.5 font-mono text-[11px] text-slate-600 dark:text-slate-300">
-              {cloudShellCommand}
-            </code>
-            <CopyButton value={cloudShellCommand} />
-          </div>
-          <a
-            href="https://shell.azure.com/powershell"
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-[#0078d4] px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#106ebe]"
-          >
-            Open Azure Cloud Shell ↗
-          </a>
-        </div>
-
-        <div className="mt-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 p-3">
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Option 2: PowerShell
-            <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-              Manual
-            </span>
-          </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            For local machines or instances that aren&apos;t hosted in Azure.
+            Run from PowerShell on any machine, signed in as that Global
+            Administrator.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <a
