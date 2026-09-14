@@ -2,6 +2,7 @@
 title: Demo Mode
 parent: Getting Started
 nav_order: 3
+permalink: /getting-started/demo-mode/
 ---
 
 # Demo Mode

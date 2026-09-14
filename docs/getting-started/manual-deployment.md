@@ -2,6 +2,7 @@
 title: Manual Deployment
 parent: Getting Started
 nav_order: 2
+permalink: /getting-started/manual-deployment/
 ---
 
 # Manual Deployment

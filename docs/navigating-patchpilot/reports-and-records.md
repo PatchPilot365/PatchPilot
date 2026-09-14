@@ -2,6 +2,7 @@
 title: Reports & Records
 parent: Navigating PatchPilot365
 nav_order: 2
+permalink: /navigating-patchpilot/reports-and-records/
 ---
 
 # Reports & Records

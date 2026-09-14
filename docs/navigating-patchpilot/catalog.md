@@ -2,6 +2,7 @@
 title: Catalog
 parent: Navigating PatchPilot365
 nav_order: 3
+permalink: /navigating-patchpilot/catalog/
 ---
 
 # Catalog

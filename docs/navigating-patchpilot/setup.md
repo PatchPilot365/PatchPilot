@@ -2,6 +2,7 @@
 title: Setup
 parent: Navigating PatchPilot365
 nav_order: 4
+permalink: /navigating-patchpilot/setup/
 ---
 
 # Setup

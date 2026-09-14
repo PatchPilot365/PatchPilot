@@ -2,6 +2,7 @@
 title: Manage users and roles
 parent: User Guide
 nav_order: 5
+permalink: /user-guide/manage-users-and-roles/
 ---
 
 # Manage users and roles

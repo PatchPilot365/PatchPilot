@@ -2,6 +2,7 @@
 title: Set up a schedule
 parent: User Guide
 nav_order: 3
+permalink: /user-guide/set-up-a-schedule/
 ---
 
 # Set up a schedule
