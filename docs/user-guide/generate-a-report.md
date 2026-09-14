@@ -2,6 +2,7 @@
 title: Generate a report
 parent: User Guide
 nav_order: 4
+permalink: /user-guide/generate-a-report/
 ---
 
 # Generate a report

@@ -2,6 +2,7 @@
 title: Operations
 parent: Navigating PatchPilot365
 nav_order: 1
+permalink: /navigating-patchpilot/operations/
 ---
 
 # Operations

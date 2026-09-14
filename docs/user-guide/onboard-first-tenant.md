@@ -2,6 +2,7 @@
 title: Onboard a first tenant
 parent: User Guide
 nav_order: 1
+permalink: /user-guide/onboard-first-tenant/
 ---
 
 # Onboard a first tenant

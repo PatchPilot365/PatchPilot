@@ -2,6 +2,7 @@
 title: Azure Deployment
 parent: Getting Started
 nav_order: 1
+permalink: /getting-started/azure-deploy/
 ---
 
 # Azure Deployment

@@ -2,6 +2,7 @@
 title: Settings
 parent: Navigating PatchPilot365
 nav_order: 5
+permalink: /navigating-patchpilot/settings/
 ---
 
 # Settings
