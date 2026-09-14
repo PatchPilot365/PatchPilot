@@ -1,7 +1,8 @@
-title: PatchPilot Docs
+title: PatchPilot365 Docs
 description: >-
-  Documentation for PatchPilot — a self-hosted, multi-tenant Windows patch
-  management console for MSPs.
+  Documentation for PatchPilot365 — a multi-tenant vulnerability management
+  tool that orchestrates remediation for devices enrolled in Microsoft
+  Defender and Intune.
 
 remote_theme: just-the-docs/just-the-docs
 plugins:
@@ -10,12 +11,13 @@ plugins:
 url: "https://docs.patchpilot365.com"
 baseurl: ""
 
-color_scheme: light
+logo: "/assets/images/logo.png"
+color_scheme: patchpilot-light
 search_enabled: true
 heading_anchors: true
 
 aux_links:
-  "PatchPilot on GitHub":
+  "PatchPilot365 on GitHub":
     - "https://github.com/PatchPilot365/PatchPilot"
 aux_links_new_tab: true
 

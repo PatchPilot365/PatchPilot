@@ -6,12 +6,23 @@ nav_order: 4
 
 # Pairing this instance
 
-Every path that connects a real Microsoft 365 tenant — production Docker
-Compose or the Azure deploy — arrives at the same screen: **Pair this
-instance**. A fresh install has no Entra app registration yet, so there is
-nobody to sign in as until this step completes.
+Every fresh instance — Azure Deployment or Manual Deployment — arrives at
+the same screen: **Pair this instance**. There is no Entra app registration
+yet, so there is nobody to sign in as until you make a choice here.
 
 ![Pairing screen showing the download-and-run PowerShell instructions and the Enable Demo Mode fallback]({{ "/assets/images/pairing-screen.png" | relative_url }})
+
+## Choose: Demo Mode or pair with your home tenant
+
+Two options from this screen:
+
+- **Enable Demo Mode** — explore the console with fictional data. No real
+  tenant, no script to run, nothing to configure. See
+  [Demo Mode]({{ "/getting-started/demo-mode/" | relative_url }}) for what
+  that means and how to get back out of it.
+- **Run the deployment script** — pairs this instance with your MSP's real
+  home tenant for production use. This is the path the rest of this page
+  documents.
 
 ## What pairing does
 
@@ -44,15 +55,6 @@ create the Entra app registration for a fresh instance:
 The pairing token is single-use and time-limited; if it expires before you
 run the script, reload the page to generate a fresh download.
 
-## Or: explore without connecting a tenant
-
-The same screen offers **Enable Demo Mode** as an alternative to pairing —
-flips this instance into the same fictional-data mode covered in
-[Demo Mode]({{ "/getting-started/demo-mode/" | relative_url }}), without
-needing to run `pnpm dev` locally. This is **one-way**, the same as pairing
-itself: there's no in-app way to switch back to an unpaired state
-afterward.
-
 ## Why Azure Cloud Shell isn't offered here
 
 Earlier versions of this screen offered Azure Cloud Shell as a no-local-
@@ -65,6 +67,6 @@ local PowerShell is the one supported path.
 ## Next step
 
 Once pairing completes, sign in for real and continue to the
-[Navigating PatchPilot]({{ "/navigating-patchpilot/" | relative_url }})
+[Navigating PatchPilot365]({{ "/navigating-patchpilot/" | relative_url }})
 section, or jump straight to
 [Onboard your first tenant]({{ "/user-guide/onboard-first-tenant/" | relative_url }}).

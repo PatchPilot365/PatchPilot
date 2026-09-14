@@ -1,12 +1,12 @@
 ---
 title: Catalog
-parent: Navigating PatchPilot
+parent: Navigating PatchPilot365
 nav_order: 3
 ---
 
 # Catalog
 
-The three package/script sources PatchPilot matches findings against to
+The three package/script sources PatchPilot365 matches findings against to
 work out what the actual fix is. All three group a tenant's current
 findings by product and score how each can be patched, filterable by match
 status: **All** / **Covered** / **Not supported** / **OS / Windows Update**.

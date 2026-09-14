@@ -8,9 +8,9 @@ nav_order: 4
 ## Licensing, at a glance
 
 - **Entra ID P1 or P2** — required for the two home-tenant access groups
-  PatchPilot creates (bundled in Microsoft 365 Business Premium, EMS E3/E5,
+  PatchPilot365 creates (bundled in Microsoft 365 Business Premium, EMS E3/E5,
   or Microsoft 365 E3/E5). Without it, a Global Administrator can still use
-  PatchPilot directly (see below) — it only blocks the optional delegation
+  PatchPilot365 directly (see below) — it only blocks the optional delegation
   groups.
 - **Global Administrator or Privileged Role Administrator** — to run the
   deploy/pairing script, and to grant or revoke another engineer's write
@@ -20,8 +20,8 @@ nav_order: 4
   Premium or Microsoft 365 E3/E5).
 - **Microsoft Defender for Business, or Defender for Endpoint Plan 1+** —
   for Live Response (bundled in the same plans above).
-- **A GDAP relationship via Microsoft Partner Center** — before PatchPilot
-  can reach a customer tenant at all. PatchPilot cannot create this
+- **A GDAP relationship via Microsoft Partner Center** — before PatchPilot365
+  can reach a customer tenant at all. PatchPilot365 cannot create this
   relationship itself; it always starts in Partner Center, where the MSP
   requests it and the customer approves it.
 - **Membership in the home tenant's `AdminAgents` group** — needed to
@@ -33,20 +33,20 @@ nav_order: 4
   Administrator or Security Administrator has to enable them by hand, once
   per customer tenant, before Live Response will work there.
 
-Without the Entra ID P1/P2 license specifically: PatchPilot's two optional
+Without the Entra ID P1/P2 license specifically: PatchPilot365's two optional
 delegation groups (`PatchPilot Read-Only Access` and
 `PatchPilot Write Access`) can't be created, but a genuine Global
 Administrator — or anyone directly assigned Global Reader, Security Reader,
 Security Administrator, Intune Administrator, and/or Windows Update
-Deployment Administrator — can use PatchPilot exactly the same way with no
+Deployment Administrator — can use PatchPilot365 exactly the same way with no
 Entra P1/P2 at all. The groups only exist to delegate access to other
 engineers without making them Global Administrator outright.
 
-## Roles inside PatchPilot
+## Roles inside PatchPilot365
 
-Separate from all of the above: once PatchPilot can reach a tenant, what an
-individual signed-in engineer can do *inside* PatchPilot is governed by
-their PatchPilot role, not their Entra/GDAP role. Three roles:
+Separate from all of the above: once PatchPilot365 can reach a tenant, what an
+individual signed-in engineer can do *inside* PatchPilot365 is governed by
+their PatchPilot365 role, not their Entra/GDAP role. Three roles:
 
 | Role | Can do |
 | --- | --- |
@@ -58,11 +58,16 @@ See [Manage users and roles]({{ "/user-guide/manage-users-and-roles/" | relative
 for how to assign these, and the role breakdown by product area on
 **Settings > Users > Roles** inside the app.
 
-## Software and tooling (self-hosting)
+## Software and tooling (Manual Deployment)
 
-- **Docker and Docker Compose** on the host that runs PatchPilot.
+Only relevant if you're self-hosting via
+[Manual Deployment]({{ "/getting-started/manual-deployment/" | relative_url }}) —
+[Azure Deployment]({{ "/getting-started/azure-deploy/" | relative_url }})
+provisions all of this automatically.
+
+- **Docker and Docker Compose** on the host that runs PatchPilot365.
 - **Node.js 22+** and **pnpm 9+** if you're building/running outside the
-  provided Docker images (development or Demo Mode).
+  provided Docker images (contributor/development workflows).
 - **PostgreSQL** and **Redis** — provisioned automatically by the Docker
   Compose files; no manual setup needed if you use them as shipped.
 
@@ -75,12 +80,12 @@ See [Architecture: Network requirements at a glance]({{ "/architecture/#network-
 Every setting lives in `.env`, copied from `.env.example` at setup time.
 Everything Entra-related is deliberately left blank until pairing completes
 — filling in a fake placeholder value breaks the "Pair this instance" flow,
-since PatchPilot treats "all three set" and "all three blank" as the only
+since PatchPilot365 treats "all three set" and "all three blank" as the only
 two valid states before pairing.
 
 | Variable | Purpose |
 | --- | --- |
-| `PUBLIC_URL` | The public HTTPS origin where PatchPilot is reached. |
+| `PUBLIC_URL` | The public HTTPS origin where PatchPilot365 is reached. |
 | `PP_DOMAIN` | Bare hostname Caddy serves and requests a Let's Encrypt certificate for. |
 | `AUTH_REDIRECT_URI` | Entra app redirect URI — must exactly match the app registration. |
 | `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` | Filled in automatically by the pairing script. Leave blank until then. |
@@ -90,10 +95,10 @@ two valid states before pairing.
 | `API_PORT` | Port the Fastify API listens on. |
 | `CORS_ORIGINS` | Comma-separated origins allowed to call the API — the web app's own origin. |
 | `AUTO_SYNC_INTERVAL_MINUTES` | How often the API background-refreshes devices/vulnerabilities for reachable tenants. `0` disables it. Ignored in Demo Mode. |
-| `UPDATE_CHECK_INTERVAL_HOURS` | How often the API polls GitHub Releases for a newer PatchPilot version. `0` disables it. |
+| `UPDATE_CHECK_INTERVAL_HOURS` | How often the API polls GitHub Releases for a newer PatchPilot365 version. `0` disables it. |
 | `BOOTSTRAP_ADMIN_UPN` | The UPN that's seeded/promoted to an active admin on every startup — both how you provision the very first admin and how you recover if you lock yourself out. Safe to leave set permanently; the upsert is idempotent. |
 | `DEMO_MODE` | `true` (default) runs with zero dependencies and bypassed auth. Set `false` for production, which then requires every secret/URL above to be genuinely set. |
-| `AI_FEATURES_ENABLED` | Off by default. See [AI features]({{ "/getting-started/production-deploy/#ai-features-optional" | relative_url }}). |
+| `AI_FEATURES_ENABLED` | Off by default. See [AI features]({{ "/getting-started/manual-deployment/#ai-features-optional" | relative_url }}). |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Self-hosted AI model connection and model name. |
 | `REPORT_RETENTION_DAYS` / `REPORT_RETENTION_MAX_PER_ENGINEER` | How long generated reports are kept, and a per-engineer cap. |
 | `REPORT_BROWSER_EXECUTABLE_PATH` / `REPORT_BROWSER_CHANNEL` | How the worker finds a Chromium/Edge binary to render report PDFs. On Windows dev boxes, set `REPORT_BROWSER_CHANNEL=msedge` to reuse your existing Edge install. |

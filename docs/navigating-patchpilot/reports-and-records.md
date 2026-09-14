@@ -1,6 +1,6 @@
 ---
 title: Reports & Records
-parent: Navigating PatchPilot
+parent: Navigating PatchPilot365
 nav_order: 2
 ---
 
@@ -11,7 +11,7 @@ and exportable, rather than what's live right now.
 
 ## Audit Log
 
-Every action taken in PatchPilot — by an engineer, a schedule, or a
+Every action taken in PatchPilot365 — by an engineer, a schedule, or a
 background process. **Actions** are shown by default; switch to **All
 events** to include the raw Microsoft API traffic behind them. Every entry
 records the engineer, tenant, endpoint, method, a hash of the payload
@@ -37,7 +37,7 @@ different software without anything actually changing on the device.
 ![Reports page showing available report types and the AI narration toggle]({{ "/assets/images/reports.png" | relative_url }})
 
 Branded PDF reports and CSV metric exports, generated entirely from
-PatchPilot's own data — nothing external is called to produce a report.
+PatchPilot365's own data — nothing external is called to produce a report.
 Available today: Executive Summary and Compliance/SLA PDF reports, plus
 five CSV exports (SLA compliance, device compliance, software exposure,
 time-to-remediate, posture trend).

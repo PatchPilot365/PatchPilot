@@ -1,0 +1,37 @@
+<button id="pp-theme-toggle" type="button" aria-label="Toggle dark mode"
+  style="display:flex;align-items:center;gap:0.4em;width:100%;margin-top:0.6em;padding:0.4em 0.6em;
+         font-size:0.8em;border:1px solid var(--border-color, #e2e2e2);border-radius:4px;
+         background:transparent;color:inherit;cursor:pointer;">
+  <span id="pp-theme-toggle-icon" aria-hidden="true">🌙</span>
+  <span id="pp-theme-toggle-label">Dark mode</span>
+</button>
+
+<script>
+(function () {
+  var LIGHT = "patchpilot-light";
+  var DARK = "patchpilot-dark";
+  var STORAGE_KEY = "pp-color-scheme";
+
+  function apply(theme) {
+    jtd.setTheme(theme);
+    var icon = document.getElementById("pp-theme-toggle-icon");
+    var label = document.getElementById("pp-theme-toggle-label");
+    if (icon) icon.textContent = theme === DARK ? "☀️" : "🌙";
+    if (label) label.textContent = theme === DARK ? "Light mode" : "Dark mode";
+  }
+
+  var saved = null;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) {}
+  if (saved === LIGHT || saved === DARK) {
+    apply(saved);
+  } else {
+    apply(jtd.getTheme());
+  }
+
+  jtd.addEvent(document.getElementById("pp-theme-toggle"), "click", function () {
+    var next = jtd.getTheme() === DARK ? LIGHT : DARK;
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (e) {}
+    apply(next);
+  });
+})();
+</script>

@@ -1,17 +1,17 @@
 ---
 title: Setup
-parent: Navigating PatchPilot
+parent: Navigating PatchPilot365
 nav_order: 4
 ---
 
 # Setup
 
-The one-time and diagnostic pages behind getting PatchPilot connected and
+The one-time and diagnostic pages behind getting PatchPilot365 connected and
 staying connected — not part of day-to-day remediation work.
 
 ## App Registration
 
-The multi-tenant Entra app PatchPilot runs as, its requested permissions,
+The multi-tenant Entra app PatchPilot365 runs as, its requested permissions,
 and its OAuth redirect origins. Per-tenant admin consent now lives on the
 [Tenants]({{ "/navigating-patchpilot/settings/#tenants" | relative_url }})
 page — this page covers the one-time home-tenant setup: deploying the app
@@ -29,7 +29,7 @@ which links back to this in-app page as the maintained source of truth.
 
 ## Setup Health
 
-*"Is PatchPilot wired up to operate — at the MSP level, for this tenant,
+*"Is PatchPilot365 wired up to operate — at the MSP level, for this tenant,
 and for one specific remediation."* Four tabs, each checking a different
 scope:
 
@@ -44,7 +44,7 @@ scope:
   actually dispatching anything. A clean result reads "Cleared — this
   remediation could proceed (no blocking checks)."
 - **Check Access** — per-engineer: what a specific signed-in engineer can
-  actually do, checked in three categories — PatchPilot's own RBAC role,
+  actually do, checked in three categories — PatchPilot365's own RBAC role,
   direct Entra roles, and GDAP roles from Partner Center. Admins
   (`users:manage`) can check any engineer; everyone else can only check
   themselves.

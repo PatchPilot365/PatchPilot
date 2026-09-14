@@ -6,10 +6,10 @@ has_children: true
 
 # User Guide
 
-Five common tasks, walked through end to end. Each one assumes PatchPilot
+Five common tasks, walked through end to end. Each one assumes PatchPilot365
 is already deployed and paired — see [Getting Started]({{ "/getting-started/" | relative_url }})
 if it isn't yet — and links back into
-[Navigating PatchPilot]({{ "/navigating-patchpilot/" | relative_url }}) for
+[Navigating PatchPilot365]({{ "/navigating-patchpilot/" | relative_url }}) for
 the full reference on any page it passes through.
 
 | Task | What it covers |

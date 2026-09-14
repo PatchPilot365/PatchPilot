@@ -6,16 +6,16 @@ nav_order: 1
 
 # Onboard a first tenant
 
-1. **Establish the GDAP relationship in Partner Center first.** PatchPilot
+1. **Establish the GDAP relationship in Partner Center first.** PatchPilot365
    can't create this relationship — the MSP requests it and the customer
-   approves it in Microsoft Partner Center, outside PatchPilot entirely.
+   approves it in Microsoft Partner Center, outside PatchPilot365 entirely.
    See [Known Issues]({{ "/known-issues/#access-and-onboarding" | relative_url }}).
 2. Once the relationship is active, open **Settings > Tenants** and click
-   **Discover** (or the page-level re-probe action) to have PatchPilot pick
+   **Discover** (or the page-level re-probe action) to have PatchPilot365 pick
    up the new tenant.
 3. Confirm its **Consent** column reads *Active* and its **Reachability**
    column reads *Reachable*. If Reachability shows *Needs consent*, the
-   customer's admin consent for PatchPilot's app registration is still
+   customer's admin consent for PatchPilot365's app registration is still
    outstanding — see [App Registration]({{ "/navigating-patchpilot/setup/#app-registration" | relative_url }}).
 4. The tenant starts **read-only**. Leave it that way until you've reviewed
    its data; opt in write access explicitly on the same Tenants row when

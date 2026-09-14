@@ -1,23 +1,26 @@
-# PatchPilot
+# PatchPilot365
 
 [![CI](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-docs.patchpilot365.com-blue)](https://docs.patchpilot365.com/)
 
-Self-hostable, multi-tenant **MSP patch management console**. PatchPilot bridges
+Multi-tenant **MSP patch management console**. PatchPilot365 bridges
 Microsoft Defender Vulnerability Management (MDVM) findings to actual remediation
 via **Winget** (third-party apps) and the **Windows Update Agent** (OS patches),
 across many GDAP-linked customer tenants.
 
-> **No Azure. No SharePoint. No Power Platform. No Dataverse.**
-> The entire stack runs on infrastructure you control (Docker Compose on a VPS,
-> MSP infra, or on-prem). All Microsoft tokens stay **server-side** — the browser
-> never sees a Graph access token.
+> **No SharePoint. No Power Platform. No Dataverse.** PatchPilot365 doesn't
+> depend on any Azure PaaS services — it's a plain Docker Compose stack you
+> can run on an Azure VM (see [Azure Deployment](infra/azure/README.md)),
+> your own infrastructure, or a third-party host. All Microsoft tokens stay
+> **server-side** — the browser never sees a Graph access token.
 
 ---
 
 ## Non-negotiables (architecture invariants)
 
-1. **Fully self-hosted** — Docker Compose; no managed cloud dependency.
+1. **You control the infrastructure** — one-click Azure deployment, or
+   self-hosted on your own Azure subscription, on-prem, or third-party
+   hosting; no managed cloud dependency either way.
 2. **Tokens server-side only** — the browser talks exclusively to the PatchPilot
    API on the same origin, carrying a session cookie. No Graph token in the SPA.
 3. **Audit everything** — every Graph call is logged (engineer, tenant, endpoint,

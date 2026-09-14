@@ -1,0 +1,7 @@
+// PatchPilot365 brand palette on top of just-the-docs' default light scheme.
+// Variables here use `!default` in the upstream light.scss, so they must be
+// set BEFORE importing it to actually take effect.
+$link-color: #4f46e5; // indigo-600
+$btn-primary-color: #4f46e5;
+
+@import "./color_schemes/light";

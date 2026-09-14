@@ -5,10 +5,11 @@ nav_order: 1
 permalink: /
 ---
 
-# PatchPilot Documentation
+# PatchPilot365 Documentation
 {: .fs-9 }
 
-A self-hosted, multi-tenant Windows patch management console for MSPs.
+A multi-tenant vulnerability management tool that orchestrates remediation
+for devices enrolled in Microsoft Defender and Intune.
 {: .fs-6 .fw-300 }
 
 [Get started]({{ "/getting-started/" | relative_url }}){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -16,32 +17,28 @@ A self-hosted, multi-tenant Windows patch management console for MSPs.
 
 ---
 
-## What PatchPilot is
+## What is PatchPilot365
 
-PatchPilot bridges Microsoft Defender Vulnerability Management (MDVM)
-findings to actual remediation — via **Winget** (third-party apps) and the
-**Windows Update Agent** (OS patches) — across every GDAP-linked customer
-tenant an MSP manages. Instead of working tenant by tenant inside separate
-Microsoft consoles, an engineer gets one place to see what's exposed across
-the whole fleet and act on it.
+PatchPilot365 watches every customer tenant an MSP manages for security
+findings from Microsoft Defender Vulnerability Management, then does
+something about them — dispatching fixes through **Winget** (for
+third-party apps) and **Windows Update** (for OS patches). Instead of
+jumping between separate Microsoft consoles for each customer, an engineer
+gets one place to see what's exposed across the whole fleet and act on it.
 
-It doesn't replace the Microsoft services a customer already pays for — it
-orchestrates Defender for Endpoint and Intune, using the GDAP relationship
-the MSP already holds with that customer, with the correct, already
-established permissions rather than a new standing credential of its own.
-There's no agent on a customer's devices and nothing installed on them; every
-finding and every fix goes through Microsoft's own APIs.
+It doesn't replace Defender or Intune — it orchestrates them, using the
+access relationship (GDAP) the MSP already holds with each customer. There's
+no agent to install on a customer's devices; every finding and every fix
+goes through Microsoft's own APIs.
 
-A few things that follow from that:
+PatchPilot365 is designed to run primarily as a virtual machine in Azure,
+deployed with one click, with support for on-premises or third-party
+hosting if you need it. A couple of things worth knowing up front:
 
-- **No Azure, no SharePoint, no Power Platform, no Dataverse.** The entire
-  stack is self-hosted — Docker Compose on a VPS, MSP infrastructure, or
-  on-prem — and you control it end to end.
-- **Tokens never touch the browser.** The SPA holds only a session cookie;
-  every Microsoft Graph/Defender call happens server-side.
-- **PatchPilot holds no standing credential for any customer.** Every action
-  runs with the signed-in engineer's own delegated access, for as long as a
-  single request takes and no longer.
+- **Tokens never touch the browser.** Every Microsoft Graph/Defender call
+  happens server-side.
+- **No standing credential for any customer.** Every action runs with the
+  signed-in engineer's own access, for only as long as it takes.
 
 ## Where to go next
 
@@ -50,12 +47,12 @@ A few things that follow from that:
 | Stand up an instance and see it running | [Getting Started]({{ "/getting-started/" | relative_url }}) |
 | Understand how it connects to a tenant and reaches a device | [Architecture]({{ "/architecture/" | relative_url }}) |
 | Check licensing, roles, and network prerequisites before you commit | [Requirements]({{ "/requirements/" | relative_url }}) |
-| See what PatchPilot can't do yet, before you hit it in the field | [Known Issues]({{ "/known-issues/" | relative_url }}) |
-| Find your way around a page you're looking at right now | [Navigating PatchPilot]({{ "/navigating-patchpilot/" | relative_url }}) |
+| See what PatchPilot365 can't do yet, before you hit it in the field | [Known Issues]({{ "/known-issues/" | relative_url }}) |
+| Find your way around a page you're looking at right now | [Navigating PatchPilot365]({{ "/navigating-patchpilot/" | relative_url }}) |
 | Keep an already-running instance healthy | [Server Health & Maintenance]({{ "/server-health-and-maintenance/" | relative_url }}) |
 | Walk through a specific task step by step | [User Guide]({{ "/user-guide/" | relative_url }}) |
 
-This site covers using and operating PatchPilot as an MSP engineer or admin.
+This site covers using and operating PatchPilot365 as an MSP engineer or admin.
 For contributor-facing details (monorepo layout, running the test suite,
 internal design notes), see the
 [repository README](https://github.com/PatchPilot365/PatchPilot#readme).
