@@ -5,6 +5,8 @@ nav_order: 1
 permalink: /
 ---
 
+![PatchPilot365 — Patch Smarter. Stay Secure. Always.]({{ "/assets/images/logo-full.png" | relative_url }}){: .mb-4 style="max-width: 480px;" }
+
 # PatchPilot365 Documentation
 {: .fs-9 }
 

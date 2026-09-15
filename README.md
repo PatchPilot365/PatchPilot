@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/images/logo-full.png" alt="PatchPilot365 — Patch Smarter. Stay Secure. Always." width="480">
+</p>
+
 # PatchPilot365
 
 [![CI](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/PatchPilot365/PatchPilot/actions/workflows/ci.yml)
