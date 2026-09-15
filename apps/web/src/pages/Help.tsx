@@ -14,6 +14,17 @@ const CHANNELS: { name: string; latency: string; use: string }[] = [
   { name: "Expedited Feature Update", latency: "hours–days", use: "OS version upgrade, via a feature update deployment profile." },
 ];
 
+const DOCS_BASE = "https://docs.patchpilot365.com";
+
+const DOC_LINKS: { label: string; href: string; description: string }[] = [
+  { label: "Documentation home", href: `${DOCS_BASE}/`, description: "Full site: getting started, architecture, requirements, and more." },
+  { label: "Getting Started", href: `${DOCS_BASE}/getting-started/`, description: "Deploy to Azure, pair a tenant, or try Demo Mode." },
+  { label: "Architecture", href: `${DOCS_BASE}/architecture/`, description: "How PatchPilot365 reaches a tenant and remediates a device." },
+  { label: "Requirements", href: `${DOCS_BASE}/requirements/`, description: "Licensing, roles, GDAP, and network prerequisites." },
+  { label: "Known Issues", href: `${DOCS_BASE}/known-issues/`, description: "Current limitations before you hit them in the field." },
+  { label: "User Guide", href: `${DOCS_BASE}/user-guide/`, description: "Step-by-step walkthroughs for common tasks." },
+];
+
 const FAQS: FaqEntry[] = [
   {
     q: "What does \"(preview)\" mean on a catalog pick or a pre-flight check?",
@@ -88,9 +99,36 @@ export function Help() {
         </Card>
 
         <Card>
+          <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Documentation</h2>
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            The full PatchPilot365 documentation site covers deployment, architecture, and
+            day-to-day operation in more depth than fits here.
+          </p>
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {DOC_LINKS.map((d) => (
+              <li key={d.href} className="py-3 first:pt-0 last:pb-0">
+                <a
+                  href={d.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  {d.label} →
+                </a>
+                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{d.description}</div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card>
           <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">Support</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            For anything not covered here, contact PatchPilot Support at{" "}
+            For anything not covered here or in the{" "}
+            <a href={DOCS_BASE} target="_blank" rel="noreferrer" className="text-sky-700 dark:text-sky-300 hover:underline">
+              documentation
+            </a>
+            , contact PatchPilot Support at{" "}
             <a href="mailto:support@patchpilot365.com" className="text-sky-700 dark:text-sky-300 hover:underline">
               support@patchpilot365.com
             </a>
