@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.4] - 2026-09-16
+
 - Added a top-level "Missing KBs" tab to the device detail panel - previously
   only reachable via a nested sub-tab under Vulnerabilities. Fixed a bug this
   exposed where the tab (and its siblings) went blank on any device with zero
