@@ -1674,9 +1674,12 @@ export function Devices() {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setDeviceTab(value)}
+                  onClick={() => {
+                    setDeviceTab(value);
+                    if (value === "findings") setFindingsTab("cve");
+                  }}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    deviceTab === value
+                    deviceTab === value && (value !== "findings" || findingsTab === "cve")
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
                       : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
                   }`}
@@ -1684,6 +1687,20 @@ export function Devices() {
                   {label}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setDeviceTab("findings");
+                  setFindingsTab("os");
+                }}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  deviceTab === "findings" && findingsTab === "os"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
+                }`}
+              >
+                {`Missing KBs (${deviceMissingKbs.length})`}
+              </button>
             </div>
 
             {deviceTab === "overview" && (
@@ -1945,12 +1962,12 @@ export function Devices() {
                           <SortableTh label="Scope" sortKey="scope" activeKey={inventorySortKey} dir={inventorySortDir} onSort={toggleInventorySort} />
                           <SortableTh label="Latest version" sortKey="latest" activeKey={inventorySortKey} dir={inventorySortDir} onSort={toggleInventorySort} />
                           <SortableTh
-                            label="Weaknesses"
+                            label="Tenant weaknesses"
                             sortKey="weaknesses"
                             activeKey={inventorySortKey}
                             dir={inventorySortDir}
                             onSort={toggleInventorySort}
-                            title="Tenant-wide count, not specific to this device."
+                            title="Tenant-wide count for this software product, not specific to this device. See the Vulnerabilities tab for this device's own findings."
                           />
                           <th className="px-4 py-2.5 text-right font-medium">Action</th>
                         </tr>
@@ -2101,13 +2118,13 @@ export function Devices() {
                   </div>
                 </div>
               )}
-              {!selected.defenderMachineId ? (
+              {!selected.defenderMachineId && findingsTab === "cve" ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   Not onboarded to Defender — no CVE data for this device.
                 </p>
-              ) : deviceVulnsLoading ? (
+              ) : deviceVulnsLoading && findingsTab === "cve" ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-              ) : deviceVulns.length === 0 ? (
+              ) : deviceVulns.length === 0 && findingsTab === "cve" ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   No open vulnerabilities for this device.
                 </p>
