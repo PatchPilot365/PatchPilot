@@ -8,6 +8,8 @@ import {
   demoDevices,
   demoSoftwareInventory,
   demoDeviceSoftware,
+  demoDeviceVulnerabilities,
+  demoRecommendations,
   type TenantRow,
   type DeviceRow,
   type SoftwareInventoryRow,
@@ -25,6 +27,7 @@ import {
   isOsFinding,
   alignVersionDisplay,
   compareWingetVersions,
+  normalizeTitle,
   type PreflightInput,
   type InstallScope,
   type RemediationAction,
@@ -53,6 +56,8 @@ import {
   toPreflightDevice,
   type ExcludedDeviceIndex,
 } from "./device-exclusions.js";
+import { loadActiveExceptions, isExcepted } from "./recommendations.js";
+import { relatedRecommendationIdFor } from "./data.js";
 import { requirePermission } from "../auth/rbac.js";
 import { deployOrReuseWin32App, Win32DeployError } from "../services/win32-app-deploy.js";
 import type { Win32Source } from "@patchpilot/shared";
@@ -159,6 +164,74 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
           eq(tables.deviceSoftware.defenderMachineId, defenderMachineId),
         ),
       );
+  }
+
+  /**
+   * This device's own open (non-excepted) CVE `software` values (one entry
+   * per finding, not deduped) — used to compute a genuine per-device weakness
+   * count for the Inventories tab, in place of `softwareInventory.weaknessCount`
+   * (a tenant-wide rollup across every device with the product installed).
+   *
+   * Applies the same active-exception filtering /api/devices/:id/vulnerabilities
+   * uses, so this count agrees with the device's own Vulnerabilities tab
+   * (e.g. a product-wide exception must drop that product's findings here too,
+   * not just from the CVE list).
+   */
+  async function loadDeviceVulnSoftware(
+    tenantId: string,
+    defenderMachineId: string,
+    deviceGroupId: string | null,
+  ): Promise<string[]> {
+    const rows: { cveId: string; software: string }[] = config.DEMO_MODE
+      ? demoDeviceVulnerabilities.filter(
+          (v) => v.tenantId === tenantId && v.defenderMachineId === defenderMachineId,
+        )
+      : await db
+          .select({
+            cveId: tables.deviceVulnerabilities.cveId,
+            software: tables.deviceVulnerabilities.software,
+          })
+          .from(tables.deviceVulnerabilities)
+          .where(
+            and(
+              eq(tables.deviceVulnerabilities.tenantId, tenantId),
+              eq(tables.deviceVulnerabilities.defenderMachineId, defenderMachineId),
+            ),
+          );
+    if (rows.length === 0) return [];
+
+    const activeExceptions = await loadActiveExceptions(tenantId);
+    if (activeExceptions.length === 0) {
+      return rows.map((r) => normalizeTitle(r.software)).filter(Boolean);
+    }
+
+    const recRows = config.DEMO_MODE
+      ? demoRecommendations.filter((r) => r.tenantId === tenantId)
+      : await db.select().from(tables.recommendations).where(eq(tables.recommendations.tenantId, tenantId));
+
+    const open = rows.filter((r) => {
+      const recommendationId = relatedRecommendationIdFor(tenantId, r.software, recRows);
+      return !isExcepted(activeExceptions, deviceGroupId, {
+        cveId: r.cveId,
+        recommendationIds: recommendationId ? [recommendationId] : [],
+      });
+    });
+    return open.map((r) => normalizeTitle(r.software)).filter(Boolean);
+  }
+
+  /**
+   * Same fuzzy product match `matchesDeviceSoftware` in routes/recommendations.ts
+   * uses to line up a recommendation's product name against a device's
+   * `deviceVulnerabilities.software` values — `deviceSoftware.name` and
+   * `deviceVulnerabilities.software` are populated by different fallback
+   * naming functions (see sync.ts), so an exact string match would miss
+   * genuine matches.
+   */
+  function countDeviceWeaknesses(softwareName: string, normalizedDeviceVulnSoftware: string[]): number {
+    const target = normalizeTitle(softwareName);
+    if (!target) return 0;
+    return normalizedDeviceVulnSoftware.filter((sw) => sw === target || sw.includes(target) || target.includes(sw))
+      .length;
   }
 
   /**
@@ -324,10 +397,11 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
     }
     if (!device.defenderMachineId) return { softwareInventory: [] };
 
-    const [rows, inventory, wingetCatalog, chocolateyCatalog, wingetMatcher, chocolateyMatcher] =
+    const [rows, inventory, deviceVulnSoftware, wingetCatalog, chocolateyCatalog, wingetMatcher, chocolateyMatcher] =
       await Promise.all([
         loadDeviceSoftwareByMachine(device.tenantId, device.defenderMachineId),
         loadInventory(device.tenantId),
+        loadDeviceVulnSoftware(device.tenantId, device.defenderMachineId, device.deviceGroupId),
         loadWingetCatalog(),
         loadChocolateyCatalog(),
         buildWingetMatcher(),
@@ -366,7 +440,9 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
         vendor: row.vendor,
         version,
         installScope,
-        weaknessCount: summary?.weaknessCount ?? 0,
+        // Genuine per-device count — see countDeviceWeaknesses — not the
+        // tenant-wide summary.weaknessCount rollup.
+        weaknessCount: countDeviceWeaknesses(row.name, deviceVulnSoftware),
         exposedMachinesCount: summary?.exposedMachinesCount ?? 0,
         publicExploit: summary?.publicExploit ?? false,
         latestVersion,

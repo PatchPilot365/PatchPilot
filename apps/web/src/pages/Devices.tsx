@@ -1962,12 +1962,12 @@ export function Devices() {
                           <SortableTh label="Scope" sortKey="scope" activeKey={inventorySortKey} dir={inventorySortDir} onSort={toggleInventorySort} />
                           <SortableTh label="Latest version" sortKey="latest" activeKey={inventorySortKey} dir={inventorySortDir} onSort={toggleInventorySort} />
                           <SortableTh
-                            label="Tenant weaknesses"
+                            label="Weaknesses"
                             sortKey="weaknesses"
                             activeKey={inventorySortKey}
                             dir={inventorySortDir}
                             onSort={toggleInventorySort}
-                            title="Tenant-wide count for this software product, not specific to this device. See the Vulnerabilities tab for this device's own findings."
+                            title="Open CVEs for this software found on this device."
                           />
                           <th className="px-4 py-2.5 text-right font-medium">Action</th>
                         </tr>
