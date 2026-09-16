@@ -12,6 +12,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Added a top-level "Missing KBs" tab to the device detail panel - previously
+  only reachable via a nested sub-tab under Vulnerabilities. Fixed a bug this
+  exposed where the tab (and its siblings) went blank on any device with zero
+  open CVEs, since the section's empty-state was gated on CVE count alone.
+- Relabeled the device Inventories tab's "Weaknesses" column to
+  "Tenant weaknesses" with a clearer tooltip - it's a tenant-wide count for
+  the software product, not specific to the device, which could otherwise
+  read as a mismatch against Defender's own per-device vulnerability count.
+- Added a "Documentation" section to the in-app Help page, linking to the new
+  PatchPilot365 docs site (docs.patchpilot365.com).
+
 ## [1.0.3] - 2026-09-14
 
 - Removed Azure Cloud Shell as an onboarding/pairing method from the pairing
