@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.5] - 2026-09-17
+
 - Renamed the device Inventories tab's "Tenant weaknesses" column back to
   "Weaknesses" and made it a genuine per-device count - it previously showed
   the same tenant-wide rollup on every device with a product installed, which
