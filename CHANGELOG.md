@@ -12,6 +12,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Renamed the device Inventories tab's "Tenant weaknesses" column back to
+  "Weaknesses" and made it a genuine per-device count - it previously showed
+  the same tenant-wide rollup on every device with a product installed, which
+  could contradict the device's own "0 vulns" status. The new count also
+  respects active recommendation exceptions, so it agrees with the device's
+  own Vulnerabilities tab.
+
 ## [1.0.4] - 2026-09-16
 
 - Added a top-level "Missing KBs" tab to the device detail panel - previously
