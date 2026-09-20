@@ -1,5 +1,5 @@
 # PatchPilot web (React/Vite SPA). Multi-stage: build with pnpm, serve via nginx.
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable
