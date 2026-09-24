@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.6] - 2026-09-24
+
 - Fixed scheduled remediation of software with no CVE (the "None" severity
   sweep and software-scoped schedules) always failing with "no mapped winget
   package for this software", even when PatchPilot had matched the title to a

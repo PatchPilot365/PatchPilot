@@ -1,6 +1,6 @@
 {
   "name": "patchpilot",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "Self-hosted, multi-tenant MSP patch management console (Defender/MDVM -> Winget/WUA remediation).",
   "packageManager": "pnpm@9.15.9",
