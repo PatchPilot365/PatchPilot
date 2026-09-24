@@ -19,6 +19,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   passed it to the worker. Schedules with a catalog override (Chocolatey,
   Microsoft Store, Script Catalog) now also send that override to the worker
   instead of dropping it.
+- Fixed Live Response jobs failing with "remediation timed out after 420000ms"
+  when a schedule queued several jobs for one device. The time limit now only
+  counts the job's own turn on the device, not time spent waiting behind the
+  device's other jobs, and a queued job logs that it is still waiting.
+- A Live Response job that hits its time limit now actually stops. It no longer
+  sends an action afterwards, cancels any Defender action it already sent, and
+  stops updating the output of a job already marked failed.
+- Devices now get 10 minutes, up from 5, to pick up a Live Response action,
+  because a healthy device can take a full check-in cycle. The job time limit
+  is raised to 13 minutes to match.
 
 ## [1.0.5] - 2026-09-17
 
