@@ -25,7 +25,7 @@ import {
 } from "@patchpilot/shared";
 import { sendAlertEmail } from "@patchpilot/shared/alerting";
 import { assertWritesAllowed, auditSafe, env, hasCachedSession } from "@patchpilot/graph";
-import { connection, remediationQueue } from "./queue.js";
+import { connection, remediationQueue, type RemediationJob } from "./queue.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ module: "scheduler" });
@@ -190,6 +190,43 @@ export async function reconcileSchedules(): Promise<void> {
       log.error({ err, scheduleId: id, cron: schedule.cron, tz }, "failed to register schedule");
     }
   }
+}
+
+/** The `jobs` row fields a fired schedule writes that the executor also needs. */
+export interface ScheduledJobRow {
+  id: string;
+  tenantId: string;
+  deviceId: string;
+  cveId: string | null;
+  channel: RemediationChannel;
+  engineer: string;
+  packageId: string | null;
+  source: PackageSource | null;
+  altPackageId: string | null;
+}
+
+/**
+ * Build the remediation-queue payload from the same values written to the
+ * `jobs` row. The executor reads only the payload, never the row, so any field
+ * dropped here is silently lost: before this helper, both enqueue sites below
+ * omitted `packageId`, so every non-CVE sweep job (which has no CVE to fall
+ * back to a stored winget mapping through) failed with "no mapped winget
+ * package", and catalog overrides (`source`/`altPackageId`) never reached the
+ * worker at all.
+ */
+export function scheduledJobPayload(row: ScheduledJobRow, script: string): RemediationJob {
+  return {
+    jobId: row.id,
+    tenantId: row.tenantId,
+    deviceId: row.deviceId,
+    cveId: row.cveId,
+    channel: row.channel,
+    engineer: row.engineer,
+    script,
+    packageId: row.packageId,
+    source: row.source,
+    altPackageId: row.altPackageId,
+  };
 }
 
 /**
@@ -591,32 +628,26 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
         altPackageId: overrideAltPackageId,
       });
 
-    const jobId = randomUUID();
-    await db.insert(tables.jobs).values({
-      id: jobId,
+    const job: ScheduledJobRow = {
+      id: randomUUID(),
       tenantId: schedule.tenantId,
       deviceId: device.id,
       cveId: vuln.cveId,
-      coveredCveIds,
       channel,
-      status: "queued",
       engineer,
-      batchId,
-      scheduleId: schedule.id,
       packageId: overrideWingetPackageId,
       source: overrideSource,
       altPackageId: overrideAltPackageId,
+    };
+    await db.insert(tables.jobs).values({
+      ...job,
+      coveredCveIds,
+      status: "queued",
+      batchId,
+      scheduleId: schedule.id,
     });
 
-    await remediationQueue.add("remediate", {
-      jobId,
-      tenantId: schedule.tenantId,
-      deviceId: device.id,
-      cveId: vuln.cveId,
-      channel,
-      engineer,
-      script,
-    });
+    await remediationQueue.add("remediate", scheduledJobPayload(job, script));
     dispatchedDeviceIds.add(device.id);
     enqueued++;
     cvesCovered += candidates.length;
@@ -756,33 +787,27 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
           altPackageId: overrideAltPackageId,
         });
 
-      const jobId = randomUUID();
-      await db.insert(tables.jobs).values({
-        id: jobId,
+      const job: ScheduledJobRow = {
+        id: randomUUID(),
         tenantId: schedule.tenantId,
         deviceId: device.id,
         cveId: null,
         channel,
-        status: "queued",
         engineer,
+        packageId: overrideWingetPackageId ?? inv.matchedPackageId,
+        source: overrideSource,
+        altPackageId: overrideAltPackageId,
+      };
+      await db.insert(tables.jobs).values({
+        ...job,
+        status: "queued",
         batchId,
         scheduleId: schedule.id,
         software: displayName,
         deviceHostname: device.hostname,
-        packageId: overrideWingetPackageId ?? inv.matchedPackageId,
-        source: overrideSource,
-        altPackageId: overrideAltPackageId,
       });
 
-      await remediationQueue.add("remediate", {
-        jobId,
-        tenantId: schedule.tenantId,
-        deviceId: device.id,
-        cveId: null,
-        channel,
-        engineer,
-        script,
-      });
+      await remediationQueue.add("remediate", scheduledJobPayload(job, script));
       nonCveEnqueued++;
     }
   }

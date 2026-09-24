@@ -12,6 +12,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Fixed scheduled remediation of software with no CVE (the "None" severity
+  sweep and software-scoped schedules) always failing with "no mapped winget
+  package for this software", even when PatchPilot had matched the title to a
+  winget package. The scheduler saved the matched package on the job but never
+  passed it to the worker. Schedules with a catalog override (Chocolatey,
+  Microsoft Store, Script Catalog) now also send that override to the worker
+  instead of dropping it.
+
 ## [1.0.5] - 2026-09-17
 
 - Renamed the device Inventories tab's "Tenant weaknesses" column back to
