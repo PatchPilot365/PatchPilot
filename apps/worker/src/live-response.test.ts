@@ -137,3 +137,73 @@ describe("runLiveResponseKbRemediation — PatchPilot-Exit sentinel handling", (
     expect(scriptNameParam.value).toBe(uploadCall.file.fileName);
   });
 });
+
+describe("Live Response job time limit (control)", () => {
+  it("stops the job's clock while queued for the device and restarts it once the lock is held", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      redisState.exists.mockResolvedValueOnce(1); // another job holds the device
+      redisState.set.mockImplementationOnce(async () => {
+        calls.push("lock-busy");
+        return null as unknown as string;
+      });
+      redisState.set.mockImplementationOnce(async () => {
+        calls.push("lock-acquired");
+        return "OK";
+      });
+      primeSuccessfulDispatch("PatchPilot-Exit: 0");
+
+      const run = runLiveResponseKbRemediation({
+        ...baseInput,
+        control: {
+          onDeviceWait: () => calls.push("wait"),
+          onDeviceTurn: () => calls.push("turn"),
+        },
+      });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const result = await run;
+
+      expect(result.exitCode).toBe(0);
+      expect(calls).toEqual(["wait", "lock-busy", "lock-acquired", "turn"]);
+      expect(result.output).toContain("queued behind it");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never dispatches an action once the time limit has already run out", async () => {
+    graphMocks.graphGet.mockResolvedValueOnce({ ok: true, status: 200, data: { value: [] } });
+    graphMocks.graphUpload.mockResolvedValueOnce({ ok: true, status: 200, data: {} });
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runLiveResponseKbRemediation({ ...baseInput, control: { signal: controller.signal } });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("nothing was dispatched");
+    expect(graphMocks.graphWrite).not.toHaveBeenCalled();
+    expect(redisState.eval).toHaveBeenCalledTimes(1); // lock released
+  });
+
+  it("cancels an action still in flight when the time limit runs out", async () => {
+    const controller = new AbortController();
+    graphMocks.graphGet.mockResolvedValueOnce({ ok: true, status: 200, data: { value: [] } });
+    graphMocks.graphUpload.mockResolvedValueOnce({ ok: true, status: 200, data: {} });
+    graphMocks.graphWrite
+      .mockImplementationOnce(async () => {
+        // The limit runs out while Defender is accepting the action.
+        controller.abort();
+        return { ok: true, status: 201, data: { id: "action-1", status: "Pending" } };
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, data: {} }); // cancel
+
+    const result = await runLiveResponseKbRemediation({ ...baseInput, control: { signal: controller.signal } });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("time limit reached");
+    expect(graphMocks.graphWrite).toHaveBeenCalledTimes(2);
+    expect(graphMocks.graphWrite.mock.calls[1]![0].path).toBe("/machineactions/action-1/cancel");
+    expect(redisState.eval).toHaveBeenCalledTimes(1); // lock released
+  });
+});

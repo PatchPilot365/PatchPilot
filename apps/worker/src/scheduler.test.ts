@@ -63,7 +63,7 @@ vi.mock("@patchpilot/db", async (importOriginal) => {
   };
 });
 
-const { reconcileSchedules } = await import("./scheduler.js");
+const { reconcileSchedules, scheduledJobPayload } = await import("./scheduler.js");
 
 function schedule(over: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -235,5 +235,49 @@ describe("reconcileSchedules", () => {
 
     await expect(reconcileSchedules()).resolves.toBeUndefined();
     expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("scheduledJobPayload", () => {
+  const row = {
+    id: "00000000-0000-4000-8000-000000000001",
+    tenantId: "tenant-1",
+    deviceId: "device-1",
+    cveId: null,
+    channel: "live-response" as const,
+    engineer: "eng@contoso.com",
+    packageId: "TeamViewer.TeamViewer",
+    source: null,
+    altPackageId: null,
+  };
+
+  // The executor reads only the queue payload, never the jobs row, and a
+  // non-CVE sweep job has no CVE to fall back to a stored winget mapping
+  // through — so a dropped packageId fails it with "no mapped winget package".
+  it("carries the non-CVE sweep's matched winget package id to the worker", () => {
+    expect(scheduledJobPayload(row, "# script")).toEqual({
+      jobId: row.id,
+      tenantId: "tenant-1",
+      deviceId: "device-1",
+      cveId: null,
+      channel: "live-response",
+      engineer: "eng@contoso.com",
+      script: "# script",
+      packageId: "TeamViewer.TeamViewer",
+      source: null,
+      altPackageId: null,
+    });
+  });
+
+  it("carries a catalog override's source and alternate package id", () => {
+    const payload = scheduledJobPayload(
+      { ...row, cveId: "CVE-2026-0001", packageId: null, source: "chocolatey", altPackageId: "teamviewer" },
+      "# script",
+    );
+    expect(payload).toMatchObject({ cveId: "CVE-2026-0001", source: "chocolatey", altPackageId: "teamviewer" });
+  });
+
+  it("leaves packageId null for a CVE job without an override, so the worker uses the CVE's stored mapping", () => {
+    expect(scheduledJobPayload({ ...row, cveId: "CVE-2026-0001", packageId: null }, "# script").packageId).toBeNull();
   });
 });

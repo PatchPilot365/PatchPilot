@@ -14,6 +14,12 @@ import { sendAlertEmail } from "@patchpilot/shared/alerting";
 import { registerAlertingResolver } from "./alerting-config.js";
 import { REMEDIATION_QUEUE, connection, RemediationJob } from "./queue.js";
 import { executeRemediation } from "./executor.js";
+import { JobDeadline } from "./job-deadline.js";
+import {
+  REMEDIATION_CANCEL_GRACE_MS,
+  REMEDIATION_CONCURRENCY,
+  REMEDIATION_JOB_TIMEOUT_MS as JOB_TIMEOUT_MS,
+} from "./limits.js";
 import {
   backfillMissedVerifications,
   backfillRemediationAttribution,
@@ -30,22 +36,6 @@ import { logger } from "./logger.js";
 const log = logger.child({ module: "worker" });
 
 registerAlertingResolver();
-
-/**
- * Backstop above every timeout internal to `executeRemediation` (e.g. the
- * live-response channel's own 5-minute polling bound, or `graphGet`/`graphWrite`'s
- * 30s-per-request bound). Guarantees the job always reaches a terminal DB status
- * instead of parking at "running" forever — the failure mode a live "Run Now"
- * hit in production before these timeouts existed.
- */
-const JOB_TIMEOUT_MS = 7 * 60_000;
-
-/**
- * Distinguishes "the backstop above fired" from "the executor itself threw".
- * Both end the job the same way, but only the first is a worker decision that
- * overrode a run still in flight — which is the one worth auditing.
- */
-class JobTimeoutError extends Error {}
 
 /** Bounded id list for `detail` — a sweep can cover more rows than anyone reads. */
 function idList(ids: readonly string[], max = 10): string {
@@ -165,7 +155,11 @@ const worker = new Worker(
     // built, so the Jobs UI shows real device-side activity instead of an
     // opaque "Running" the whole time. A failed write here is logged, not
     // thrown — it must never abort the remediation itself.
+    // Once the terminal status write starts, a late progress write from an
+    // executor still winding down must not overwrite the final output.
+    let finished = false;
     const onProgress = async (transcript: string): Promise<void> => {
+      if (finished) return;
       try {
         await db
           .update(tables.jobs)
@@ -176,42 +170,56 @@ const worker = new Worker(
       }
     };
 
+    // The time limit covers the job's own turn on the device, not time spent
+    // queued behind other jobs for it (the Live Response path pauses it while
+    // waiting for the device lock and restarts it once the lock is held). When
+    // it runs out, the executor is told to stop — never dispatch, cancel any
+    // action in flight — and gets REMEDIATION_CANCEL_GRACE_MS to do so and
+    // return its own transcript before the worker stops waiting for it.
+    const deadline = new JobDeadline(JOB_TIMEOUT_MS);
+    deadline.start();
     let result: Awaited<ReturnType<typeof executeRemediation>>;
     try {
       result = await Promise.race([
-        executeRemediation(payload, onProgress),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new JobTimeoutError(`remediation timed out after ${JOB_TIMEOUT_MS}ms`)),
-            JOB_TIMEOUT_MS,
-          ),
-        ),
+        executeRemediation(payload, onProgress, {
+          signal: deadline.signal,
+          onDeviceWait: () => deadline.pause(),
+          onDeviceTurn: () => deadline.start(),
+        }),
+        deadline.expired(REMEDIATION_CANCEL_GRACE_MS),
       ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       result = { exitCode: 1, output: `${spec.label}: ${message}` };
-
-      // Only the backstop, not every executor failure: an executor error is the
-      // job's own outcome (already on the jobs row), whereas a timeout is the
-      // worker cutting a run short with nobody deciding so.
-      if (err instanceof JobTimeoutError) {
-        await auditSafe({
-          engineer: SYSTEM_ACTORS.worker,
-          actorType: "worker",
-          tenantId: payload.tenantId,
-          endpoint: "worker:job-timeout",
-          method: "SWEEP",
-          action: "job:timeout",
-          resourceType: "job",
-          resourceId: payload.jobId,
-          resourceLabel: payload.cveId ?? spec.label,
-          summary: `Timed out a ${spec.label} job after ${JOB_TIMEOUT_MS / 60_000} minutes`,
-          outcome: "failure",
-          detail: `dispatched by ${payload.engineer}`,
-          responseStatus: 504,
-          latencyMs: JOB_TIMEOUT_MS,
-        });
+    } finally {
+      deadline.clear();
+    }
+    // Only the time limit, not every executor failure: an executor error is the
+    // job's own outcome (already on the jobs row), whereas a timeout is the
+    // worker cutting a run short with nobody deciding so. A job that hit its
+    // limit after the device had already finished (e.g. while fetching the
+    // result) keeps its real outcome and isn't a timeout.
+    const timedOut = deadline.expiredAlready && result.exitCode !== 0 && result.exitCode !== 6;
+    if (timedOut) {
+      if (!result.output.includes("timed out") && !result.output.includes("time limit")) {
+        result = { ...result, output: `${result.output}\n${spec.label}: remediation timed out after ${JOB_TIMEOUT_MS}ms` };
       }
+      await auditSafe({
+        engineer: SYSTEM_ACTORS.worker,
+        actorType: "worker",
+        tenantId: payload.tenantId,
+        endpoint: "worker:job-timeout",
+        method: "SWEEP",
+        action: "job:timeout",
+        resourceType: "job",
+        resourceId: payload.jobId,
+        resourceLabel: payload.cveId ?? spec.label,
+        summary: `Timed out a ${spec.label} job after ${JOB_TIMEOUT_MS / 60_000} minutes`,
+        outcome: "failure",
+        detail: `dispatched by ${payload.engineer}`,
+        responseStatus: 504,
+        latencyMs: JOB_TIMEOUT_MS,
+      });
     }
 
     // Reaching a terminal status must not depend on `output` being storable.
@@ -225,6 +233,7 @@ const worker = new Worker(
     // in packages/shared/src/scripts.ts) — compliant, not a failure. No other
     // channel ever returns 6, so this can't misclassify a real failure elsewhere.
     const terminalStatus = result.exitCode === 0 || result.exitCode === 6 ? "succeeded" : "failed";
+    finished = true;
     try {
       await db
         .update(tables.jobs)
@@ -264,7 +273,7 @@ const worker = new Worker(
 
     return result;
   },
-  { connection, concurrency: 5 },
+  { connection, concurrency: REMEDIATION_CONCURRENCY },
 );
 
 worker.on("ready", () => log.info("ready, listening for remediation jobs"));

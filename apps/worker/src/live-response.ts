@@ -15,6 +15,7 @@ import {
   type RemediationAction,
 } from "@patchpilot/shared";
 import { connection } from "./queue.js";
+import { REMEDIATION_CONCURRENCY, REMEDIATION_CANCEL_GRACE_MS, REMEDIATION_JOB_TIMEOUT_MS } from "./limits.js";
 import { logger } from "./logger.js";
 
 const modLog = logger.child({ module: "live-response" });
@@ -42,6 +43,21 @@ const modLog = logger.child({ module: "live-response" });
  * (and unsigned-script execution) must be enabled in Defender's Advanced Features.
  * Absent that, step 2 fails with a Defender error, which we surface honestly.
  */
+
+/**
+ * Ties a Live Response run to the worker's job time limit (see JobDeadline in
+ * job-deadline.ts), so the limit covers the job's own turn on the device and
+ * nothing it does outlives the limit.
+ */
+export interface LiveResponseRunControl {
+  /** Aborted when the job's time limit runs out: nothing is dispatched after
+   *  that, and an action already in flight is cancelled. */
+  signal?: AbortSignal;
+  /** Called before waiting for the device lock — the job's clock stops. */
+  onDeviceWait?: () => void;
+  /** Called once this job holds the device lock — the job's clock restarts. */
+  onDeviceTurn?: () => void;
+}
 
 export interface LiveResponseInput {
   engineer: string;
@@ -72,6 +88,7 @@ export interface LiveResponseInput {
    * instead of an opaque "Running" until the action reaches a terminal state.
    */
   onProgress?: (transcript: string) => void | Promise<void>;
+  control?: LiveResponseRunControl;
 }
 
 export interface LiveResponseResult {
@@ -84,9 +101,12 @@ export interface LiveResponseResult {
  *  interactive console, which pushes a live session on click) only picks up a pending
  *  action on the device's own regular check-in cycle — Microsoft's documented default
  *  is ~5 min, so a 4 min ceiling was cancelling healthy-but-not-yet-checked-in devices
- *  before they got a chance. Cap at ~5 min then hand back. */
+ *  before they got a chance. 5 min wasn't enough either: a healthy pilot device took
+ *  298s to go Pending -> InProgress and was cancelled at 300s mid-install. Cap at
+ *  10 min — two check-in cycles — then hand back. Must stay below
+ *  REMEDIATION_JOB_TIMEOUT_MS (limits.ts). */
 const POLL_INTERVAL_MS = 6_000;
-const POLL_TIMEOUT_MS = 5 * 60_000;
+export const POLL_TIMEOUT_MS = 10 * 60_000;
 
 /** Bounds the raw SAS-blob fetch below (Azure Blob Storage, not the Graph client, so
  *  it doesn't get graphGet's built-in timeout) — an unbounded fetch here would hang
@@ -96,6 +116,23 @@ const RESULT_FETCH_TIMEOUT_MS = 30_000;
 const TERMINAL_STATUSES = new Set(["Succeeded", "Failed", "Cancelled", "TimeOut"]);
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Like sleep, but wakes early (without throwing) once `signal` aborts, so a
+ *  poll loop notices the job's time limit within one Graph call, not one
+ *  poll interval. */
+function sleepUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
 
 /** Content-addressed library file name: same script body -> same name (under a
  *  given prefix), so the "already uploaded?" check is a cheap exact-name match
@@ -242,18 +279,22 @@ const LOCK_PREFIX = "patchpilot:live-response-lock:";
  * the lock's Redis TTL (PX), so a worker process that crashes or hangs
  * mid-call (e.g. MSAL/token resolution ahead of the first Graph call, which
  * has no narrower timeout of its own) releases the device automatically
- * instead of wedging it until someone restarts the process by hand. Set just
- * above JOB_TIMEOUT_MS (7 min, index.ts) so the job's own timeout is what
+ * instead of wedging it until someone restarts the process by hand. Set above the job's time
+ * limit plus its cancel grace (limits.ts) so the job's own timeout is what
  * normally fires and marks the row failed; this is the belt-and-braces
  * backstop for when the hang is deeper than that.
  */
-const DEVICE_LOCK_TIMEOUT_MS = 8 * 60_000;
+const DEVICE_LOCK_TIMEOUT_MS = REMEDIATION_JOB_TIMEOUT_MS + REMEDIATION_CANCEL_GRACE_MS + 60_000;
 
 const LOCK_POLL_INTERVAL_MS = 3_000;
-// Long enough to wait out one full prior call (up to DEVICE_LOCK_TIMEOUT_MS)
-// plus a little slack, rather than a short ceiling that would fail a job
-// simply for being queued behind a legitimately slow — but healthy — one.
-const LOCK_WAIT_TIMEOUT_MS = DEVICE_LOCK_TIMEOUT_MS + 30_000;
+/** How often a queued job logs that it's still waiting for the device. */
+const LOCK_WAIT_HEARTBEAT_MS = 60_000;
+// Long enough to wait out every other job this worker can be running against
+// the same device (concurrency - 1, each holding the lock up to
+// DEVICE_LOCK_TIMEOUT_MS) plus a little slack. A single-call ceiling here
+// failed jobs merely for being third in line behind healthy ones when a
+// schedule fired several jobs at one device.
+export const LOCK_WAIT_TIMEOUT_MS = (REMEDIATION_CONCURRENCY - 1) * DEVICE_LOCK_TIMEOUT_MS + 60_000;
 
 // Compare-and-delete: only removes the lock if it still holds OUR token, so a
 // call whose TTL already expired (and was picked up by a new owner) can never
@@ -271,10 +312,12 @@ async function isDeviceLocked(machineId: string): Promise<boolean> {
 /** Blocks until this call owns the device's exclusive Redis lock, or throws
  *  after LOCK_WAIT_TIMEOUT_MS. Returns an opaque token that only this call may
  *  use to release it (see releaseDeviceLock). */
-async function acquireDeviceLock(machineId: string): Promise<string> {
+async function acquireDeviceLock(machineId: string, progress: ProgressLog): Promise<string> {
   const token = randomUUID();
   const key = LOCK_PREFIX + machineId;
-  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + LOCK_WAIT_TIMEOUT_MS;
+  let nextHeartbeat = startedAt + LOCK_WAIT_HEARTBEAT_MS;
   for (;;) {
     const acquired = await connection.set(key, token, "PX", DEVICE_LOCK_TIMEOUT_MS, "NX");
     if (acquired === "OK") return token;
@@ -282,6 +325,13 @@ async function acquireDeviceLock(machineId: string): Promise<string> {
       throw new Error(
         `Timed out after ${LOCK_WAIT_TIMEOUT_MS / 1000}s waiting for device ${machineId}'s Live Response ` +
           `lock — another job (in this worker process or another) is still holding it.`,
+      );
+    }
+    if (Date.now() >= nextHeartbeat) {
+      nextHeartbeat += LOCK_WAIT_HEARTBEAT_MS;
+      await progress.log(
+        `Still waiting for this device's other Live Response job to finish ` +
+          `(${Math.round((Date.now() - startedAt) / 1000)}s queued)...`,
       );
     }
     await sleep(LOCK_POLL_INTERVAL_MS);
@@ -296,8 +346,30 @@ async function releaseDeviceLock(machineId: string, token: string): Promise<void
   }
 }
 
-async function runExclusiveByDevice<T>(machineId: string, fn: () => Promise<T>): Promise<T> {
-  const token = await acquireDeviceLock(machineId);
+/**
+ * Runs `fn` while holding the device's lock. The job's time limit is paused
+ * for the wait and restarted once the lock is ours (control.onDeviceWait /
+ * onDeviceTurn), so being queued behind other jobs for the same device never
+ * eats into this job's own time — the wait has its own bound,
+ * LOCK_WAIT_TIMEOUT_MS.
+ */
+async function runExclusiveByDevice<T>(
+  machineId: string,
+  progress: ProgressLog,
+  control: LiveResponseRunControl | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const queued = await isDeviceLocked(machineId);
+  if (queued) {
+    await progress.log(
+      `Another Live Response job is already running against device ${machineId} — Defender allows only one ` +
+        `active session per device, so this job is queued behind it. Its time limit starts once it has the device.`,
+    );
+  }
+  control?.onDeviceWait?.();
+  const token = await acquireDeviceLock(machineId, progress);
+  control?.onDeviceTurn?.();
+  if (queued) await progress.log("Device is free — starting this job.");
   try {
     return await fn();
   } finally {
@@ -312,16 +384,9 @@ async function runExclusiveByDevice<T>(machineId: string, fn: () => Promise<T>):
  * a non-zero exitCode with an explanatory output.
  */
 export async function runLiveResponseRemediation(input: LiveResponseInput): Promise<LiveResponseResult> {
-  const { machineId, onProgress } = input;
+  const { machineId, onProgress, control } = input;
   const progress = new ProgressLog(onProgress);
-
-  if (await isDeviceLocked(machineId)) {
-    await progress.log(
-      `Another Live Response job is already running against device ${machineId} — Defender allows only one ` +
-        `active session per device, so this job is queued behind it.`,
-    );
-  }
-  return runExclusiveByDevice(machineId, () => runLiveResponseRemediationExclusive(input, progress));
+  return runExclusiveByDevice(machineId, progress, control, () => runLiveResponseRemediationExclusive(input, progress));
 }
 
 async function runLiveResponseRemediationExclusive(
@@ -360,6 +425,7 @@ async function runLiveResponseRemediationExclusive(
         (userScoped ? ", per-user via signed-in user" : "") +
         `)...`,
       failedLabel: packageId,
+      signal: input.control?.signal,
     },
     progress,
   );
@@ -375,6 +441,7 @@ export interface LiveResponseChocolateyInput {
   packageId: string;
   /** See LiveResponseInput.onProgress. */
   onProgress?: (transcript: string) => void | Promise<void>;
+  control?: LiveResponseRunControl;
 }
 
 /**
@@ -389,16 +456,9 @@ export interface LiveResponseChocolateyInput {
 export async function runLiveResponseChocolateyRemediation(
   input: LiveResponseChocolateyInput,
 ): Promise<LiveResponseResult> {
-  const { machineId, onProgress } = input;
+  const { machineId, onProgress, control } = input;
   const progress = new ProgressLog(onProgress);
-
-  if (await isDeviceLocked(machineId)) {
-    await progress.log(
-      `Another Live Response job is already running against device ${machineId} — Defender allows only one ` +
-        `active session per device, so this job is queued behind it.`,
-    );
-  }
-  return runExclusiveByDevice(machineId, () => runLiveResponseChocolateyRemediationExclusive(input, progress));
+  return runExclusiveByDevice(machineId, progress, control, () => runLiveResponseChocolateyRemediationExclusive(input, progress));
 }
 
 async function runLiveResponseChocolateyRemediationExclusive(
@@ -426,6 +486,7 @@ async function runLiveResponseChocolateyRemediationExclusive(
       comment: `PatchPilot: choco upgrade ${packageId}`,
       startingLog: `Requesting Live Response action on device ${machineId} (choco upgrade ${packageId})...`,
       failedLabel: packageId,
+      signal: input.control?.signal,
     },
     progress,
   );
@@ -449,6 +510,8 @@ interface DispatchOptions {
   startingLog: string;
   /** Label used in the "finished non-Succeeded" log line. */
   failedLabel: string;
+  /** The job's time limit — see LiveResponseRunControl.signal. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -526,7 +589,15 @@ async function dispatchLibraryScript(
   progress: ProgressLog,
 ): Promise<LiveResponseResult> {
   const { engineer, homeTenantId, tenantId, machineId } = target;
-  const { scriptName, args, comment, startingLog, failedLabel } = opts;
+  const { scriptName, args, comment, startingLog, failedLabel, signal } = opts;
+
+  // The job may already be past its limit (and marked failed) by the time the
+  // library check above returns. Sending an action now would change the device
+  // under a job the UI already reports as failed.
+  if (signal?.aborted) {
+    await progress.log("Job time limit reached before the action was sent — nothing was dispatched to the device.");
+    return { exitCode: 1, output: progress.text };
+  }
 
   await progress.log(startingLog);
   const params = [{ key: "ScriptName", value: scriptName }];
@@ -590,6 +661,19 @@ async function dispatchLibraryScript(
   let status = started.data.status || "Pending";
   let lastLoggedStatus = status;
   while (!TERMINAL_STATUSES.has(status)) {
+    if (signal?.aborted) {
+      await progress.log(
+        `Job time limit reached while action ${actionId} was still "${status}" — cancelling it so it can't run ` +
+          `on the device after the job has been marked failed.`,
+      );
+      await cancelMachineAction(
+        target,
+        actionId,
+        progress,
+        "PatchPilot: cancelled because the job reached its time limit before the device finished the action.",
+      );
+      return { exitCode: 1, output: progress.text };
+    }
     if (Date.now() > deadline) {
       await progress.log(
         `Action ${actionId} still "${status}" after ${POLL_TIMEOUT_MS / 1000}s — giving up on confirmation. ` +
@@ -598,7 +682,8 @@ async function dispatchLibraryScript(
       await cancelMachineAction(target, actionId, progress);
       return { exitCode: 1, output: progress.text };
     }
-    await sleep(POLL_INTERVAL_MS);
+    await sleepUnlessAborted(POLL_INTERVAL_MS, signal);
+    if (signal?.aborted) continue;
     const polled = await graphGet<MachineAction>({
       engineer,
       homeTenantId,
@@ -721,6 +806,7 @@ export interface LiveResponseKbInput {
   kbId: string;
   /** See LiveResponseInput.onProgress. */
   onProgress?: (transcript: string) => void | Promise<void>;
+  control?: LiveResponseRunControl;
 }
 
 /**
@@ -733,16 +819,9 @@ export interface LiveResponseKbInput {
  * (Defender allows only one active Live Response session per device).
  */
 export async function runLiveResponseKbRemediation(input: LiveResponseKbInput): Promise<LiveResponseResult> {
-  const { machineId, onProgress } = input;
+  const { machineId, onProgress, control } = input;
   const progress = new ProgressLog(onProgress);
-
-  if (await isDeviceLocked(machineId)) {
-    await progress.log(
-      `Another Live Response job is already running against device ${machineId} — Defender allows only one ` +
-        `active session per device, so this job is queued behind it.`,
-    );
-  }
-  return runExclusiveByDevice(machineId, () => runLiveResponseKbRemediationExclusive(input, progress));
+  return runExclusiveByDevice(machineId, progress, control, () => runLiveResponseKbRemediationExclusive(input, progress));
 }
 
 async function runLiveResponseKbRemediationExclusive(
@@ -760,6 +839,7 @@ async function runLiveResponseKbRemediationExclusive(
       comment: `PatchPilot: install KB${kbId}`,
       startingLog: `Requesting Live Response action on device ${machineId} (Windows Update KB${kbId})...`,
       failedLabel: `KB${kbId}`,
+      signal: input.control?.signal,
     },
     progress,
   );

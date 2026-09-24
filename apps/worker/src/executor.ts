@@ -24,6 +24,7 @@ import {
   runLiveResponseRemediation,
   runLiveResponseKbRemediation,
   runLiveResponseChocolateyRemediation,
+  type LiveResponseRunControl,
 } from "./live-response.js";
 
 /**
@@ -68,6 +69,8 @@ function notPerformed(label: string, reason: string): ExecutionResult {
 export async function executeRemediation(
   payload: RemediationJob,
   onProgress?: (transcript: string) => void | Promise<void>,
+  /** The job time limit hooks — see LiveResponseRunControl. Only the Live Response channel uses them. */
+  control?: LiveResponseRunControl,
 ): Promise<ExecutionResult> {
   const spec = CHANNEL_SPECS[payload.channel];
 
@@ -416,6 +419,7 @@ export async function executeRemediation(
             machineId,
             kbId: payload.kbId,
             onProgress,
+            control,
           });
         }
 
@@ -431,6 +435,7 @@ export async function executeRemediation(
             machineId,
             packageId: payload.altPackageId,
             onProgress,
+            control,
           });
         }
 
@@ -467,6 +472,7 @@ export async function executeRemediation(
           installScope: payload.installScope,
           action: payload.action,
           onProgress,
+          control,
         });
       }
 
