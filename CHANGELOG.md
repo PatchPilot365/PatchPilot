@@ -26,6 +26,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   as SYSTEM now retries as the signed-in user, so per-user installs get
   upgraded. If the package can't be found that way either, the job shows
   "Needs attention" with a hover explanation instead of a bare winget error.
+- Live Response jobs now skip a device that hasn't checked in within the
+  last 24 hours, before sending anything to it. The check uses Defender's
+  current last-seen time, or the last synced value if that lookup fails.
+  Previously such a job sat "Pending" until Defender timed it out, holding
+  the device and a job slot the whole time. The job now fails at once with
+  "no write performed" and says when the device was last seen.
 
 ## [1.0.12] - 2026-10-16
 
