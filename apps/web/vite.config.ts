@@ -49,6 +49,20 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Framework libs change far less often than app code; a chunk of their
+        // own stays cached in the browser across PatchPilot releases. Pages
+        // are split per route by lazyPage (src/lib/lazyPage.ts).
+        manualChunks(id) {
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|@tanstack)[\\/]/.test(id)) {
+            return "vendor";
+          }
+        },
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

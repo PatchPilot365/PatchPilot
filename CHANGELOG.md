@@ -14,6 +14,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 - `pnpm release` no longer prints a Node DEP0190 deprecation warning when it
   restarts the local dev API.
+- The web app loads faster. Each page is now downloaded the first time it is
+  opened instead of all up front, and framework code sits in its own file
+  that stays cached across PatchPilot updates. The app shell drops from
+  about 430 kB to about 150 kB compressed, and the charting library loads
+  only on pages that draw charts. A browser tab left open
+  across an update reloads itself once if it asks for a page file the new
+  version no longer has.
+- The bundled default logo is now 256×256 (103 kB) instead of 1254×1254
+  (941 kB). It looks the same at every size the app displays it.
 
 ## [1.0.11] - 2026-10-16
 
