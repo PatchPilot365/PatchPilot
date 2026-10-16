@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.9] - 2026-10-16
+
 - undici updated to 8.11.2 (from 7.29.1).
 - New `scripts/start-dev.ps1` for local development: starts Docker Desktop,
   the dev containers and the api/worker/web dev servers, skipping anything
