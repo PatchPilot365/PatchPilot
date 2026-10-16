@@ -26,8 +26,13 @@ const queue = vi.hoisted(() => ({
 }));
 
 vi.mock("bullmq", () => ({
-  Queue: vi.fn(() => queue),
-  Worker: vi.fn(() => ({ on: vi.fn(), close: vi.fn(async () => {}) })),
+  // `function` (not an arrow) so vitest 4 lets the mock be called with `new`.
+  Queue: vi.fn(function () {
+    return queue;
+  }),
+  Worker: vi.fn(function () {
+    return { on: vi.fn(), close: vi.fn(async () => {}) };
+  }),
 }));
 
 vi.mock("./queue.js", () => ({
