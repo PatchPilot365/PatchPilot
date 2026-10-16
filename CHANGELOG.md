@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.10] - 2026-10-16
+
 - zod updated to 4.6.7 (from 3.25.76). jsdom (test-only) updated to 30.1.2.
 
 ## [1.0.9] - 2026-10-16
