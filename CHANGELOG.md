@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.7] - 2026-10-16
+
 - The device popout on the Devices page now uses most of the screen width
   (up to 1536px, was 1024px), and its tab tables scroll sideways instead of
   cutting off columns on smaller screens.
