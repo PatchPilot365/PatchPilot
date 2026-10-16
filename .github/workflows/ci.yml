@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -58,8 +58,8 @@ jobs:
           diff -u infra/azure/azuredeploy.json /tmp/azuredeploy.generated.json
 
   # Builds every image this repo owns the Dockerfile for and scans it with
-  # Trivy — the app's own base images (node:22-alpine, nginx:1.27-alpine,
-  # alpine:3.20, docker:27-cli) get silently rebuilt upstream all the time,
+  # Trivy — the app's own base images (node:24-alpine, nginx:1.31-alpine,
+  # alpine:3.24, docker:29-cli) get silently rebuilt upstream all the time,
   # and nothing else in this repo ever checks whether that rebuild carries a
   # fixed CVE that this pinned tag hasn't picked up yet. Non-blocking
   # (exit-code 0): findings land in the repo's Code Scanning tab instead of
