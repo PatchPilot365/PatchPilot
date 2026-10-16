@@ -12,12 +12,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- `pnpm release` no longer prints a Node DEP0190 deprecation warning when it
+  restarts the local dev API.
+
 ## [1.0.11] - 2026-10-16
 
 - Container images now run on Node.js 24 LTS (node:24-alpine, from
   node:22-alpine). CI and the release workflow build on Node 24, and local
   development now needs Node 24 or newer.
-
 - `pnpm release` no longer kills a locally running dev worker when it
   restarts the local dev API. The api and worker supervisors share an
   identical command line; the release script now tells them apart by their
