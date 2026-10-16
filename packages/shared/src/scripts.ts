@@ -286,6 +286,21 @@ export const WINGET_EXIT_NOT_WINGET_MANAGED = 9;
  */
 export const WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH = 10;
 
+/**
+ * Live Response library-script verdict: winget has no installed package under this
+ * id (0x8A150014, NO_APPLICATIONS_FOUND) — not as SYSTEM, and not as the signed-in
+ * user either (see `WINGET_USER_SCOPE_RETRY`), with no version-line/edition sibling
+ * to stand in for it. Defender sees the software, but nothing winget can upgrade
+ * matches it: typically a vendor installer winget can't correlate to its package
+ * (a portable copy, a vendor self-updater's own layout), or an inventory entry for
+ * something already removed. Needs someone to look at the device; retrying won't
+ * change the result, like `WINGET_EXIT_NOT_WINGET_MANAGED`.
+ */
+export const WINGET_EXIT_NOT_VISIBLE = 11;
+
+/** winget's own exit code for "No installed package found matching input criteria" (0x8A150014). */
+const WINGET_NO_APPLICATIONS_FOUND_HRESULT = -1978335212;
+
 /** winget's own exit code for the install-technology mismatch (0x8A15008E). */
 const WINGET_INSTALL_TECHNOLOGY_MISMATCH_HRESULT = -1978335090;
 
@@ -322,7 +337,7 @@ const WINGET_INSTALL_TECHNOLOGY_MISMATCH_HRESULT = -1978335090;
  * vulnerable copy.
  */
 const WINGET_FAMILY_FALLBACK = `  # 0x8A150014 APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND - nothing installed under this exact id.
-  $wingetNoApplicationsFound = -1978335212
+  $wingetNoApplicationsFound = ${WINGET_NO_APPLICATIONS_FOUND_HRESULT}
   $familyPrefix = $null
   $memberSegment = $null
   $lastDot = $packageId.LastIndexOf('.')
@@ -381,6 +396,41 @@ const WINGET_FAMILY_FALLBACK = `  # 0x8A150014 APPINSTALLER_CLI_ERROR_NO_APPLICA
       "$packageId is not installed, and the $familyPrefix.* packages winget does manage are already at their newest version: $($unchanged -join '; ').",
       'The vulnerable copy Defender found is not one of them - most likely a copy bundled with another product (such as Visual Studio or the .NET SDK), which has to be updated through that product.'
     )
+  }`;
+
+/**
+ * Upgrade-branch fallback for the Live Response library script, after
+ * `WINGET_FAMILY_FALLBACK`: winget as SYSTEM still has no installed package under
+ * this id (0x8A150014). The job's own install scope said machine-wide (or nothing),
+ * but that is read from Defender's software evidence, which doesn't always show a
+ * per-user copy as one — and a per-user install is exactly what SYSTEM can't see
+ * (winget's scope follows the running account). So retry once as the signed-in user
+ * through the same scheduled-task runner the "user" Args token uses, before calling
+ * it a failure. Most -1978335212 failures seen on the pilot devices were browsers and
+ * other apps that commonly install per-user (Firefox, Chrome, Remote Desktop client).
+ *
+ * Outcomes:
+ *  - the per-user run upgraded it, found it current, or failed for its own reason —
+ *    that verdict is the job's verdict;
+ *  - nobody is signed in — exit 7, a plain failure: retrying while the user is
+ *    signed in can still succeed;
+ *  - the user can't see it either (or has no winget of their own) —
+ *    `WINGET_EXIT_NOT_VISIBLE`, which needs a person rather than a retry.
+ */
+const WINGET_USER_SCOPE_RETRY = `  if (-not $after -and $wingetExit -eq ${WINGET_NO_APPLICATIONS_FOUND_HRESULT}) {
+    Write-Output "PatchPilot: winget running as SYSTEM can't see an installed $packageId; retrying as the signed-in user in case it is a per-user install."
+    $userResult = Invoke-PatchPilotUserContextUpgrade -PackageId $packageId
+    Write-Output "PatchPilot: per-user retry: $($userResult.Message)"
+    if ($userResult.Code -eq 7) {
+      Complete-PatchPilotRun -Code 7 -Message "winget can't see $packageId as SYSTEM, and nobody is signed in to check for a per-user install. Retry while the device's user is signed in."
+    }
+    if ($userResult.Code -eq ${WINGET_NO_APPLICATIONS_FOUND_HRESULT} -or $userResult.Code -eq 3) {
+      Complete-PatchPilotRun -Code ${WINGET_EXIT_NOT_VISIBLE} -Message @(
+        "winget has no installed package matching $packageId - not machine-wide (as SYSTEM) and not for the signed-in user.",
+        'Defender still reports the software, so it was most likely installed by something winget cannot correlate to its package (a portable copy or a vendor self-updater), or the inventory entry is stale. Check the device by hand.'
+      )
+    }
+    Complete-PatchPilotRun -Code $userResult.Code -Message "Result of the per-user retry: $($userResult.Message)"
   }`;
 
 /**
@@ -753,6 +803,8 @@ export function wingetLiveResponseLibraryScript(): string {
 #     winget here - most likely bundled with another product. Needs manual action.
 #   ${WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH} upgrade: winget has a newer version, but its installer type differs from the
 #     installed copy's (e.g. MSI vs MSIX), so it will only uninstall + reinstall. Needs manual action.
+#   ${WINGET_EXIT_NOT_VISIBLE} upgrade: no installed package under this id, neither as SYSTEM nor for the
+#     signed-in user (after a per-user retry). Needs manual action.
 #   anything else = winget's own exit code (including for verbs other than
 #   upgrade/uninstall, which have no version-based verdict of their own).
 $ErrorActionPreference = 'Stop'
@@ -822,6 +874,7 @@ if ($verb -eq 'upgrade') {
     Complete-PatchPilotRun -Code 0 -Message "$packageId upgraded '$before' -> '$after'."
   }
 ${WINGET_FAMILY_FALLBACK}
+${WINGET_USER_SCOPE_RETRY}
   # 0x8A15008E APPINSTALLER_CLI_ERROR_INSTALL_TECHNOLOGY_MISMATCH - a newer version exists,
   # but winget will only replace this copy by uninstalling it first. Not done unattended.
   if ($wingetExit -eq ${WINGET_INSTALL_TECHNOLOGY_MISMATCH_HRESULT}) {

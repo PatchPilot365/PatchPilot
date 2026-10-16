@@ -9,6 +9,8 @@ import { remediationSubtitle } from "./remediationSubtitle";
 const SERIES = [
   { key: "succeeded", label: JOB_STATUS_TOKENS.succeeded.label, fill: JOB_STATUS_TOKENS.succeeded.fill },
   { key: "failed", label: JOB_STATUS_TOKENS.failed.label, fill: JOB_STATUS_TOKENS.failed.fill },
+  // Failed runs PatchPilot couldn't act on — shown, but outside the success rate.
+  { key: "notActionable", label: "Not actionable", fill: JOB_STATUS_TOKENS.queued.fill },
 ];
 
 const RATE_COLOR = "#0ea5e9";
@@ -21,7 +23,7 @@ export function RemediationThroughputCard({
   isLoading: boolean;
 }) {
   const nav = useNavigate();
-  const total = remediation.succeeded + remediation.failed;
+  const total = remediation.succeeded + remediation.failed + remediation.notActionable;
 
   const data = remediation.days.map((d) => ({
     ...d,
@@ -42,7 +44,7 @@ export function RemediationThroughputCard({
         xKey="day"
         series={SERIES}
         line={{ key: "rate", label: "Success rate", color: RATE_COLOR, formatValue: (v) => `${v}%` }}
-        onSelect={(_, seriesKey) => nav(toJobStatus(seriesKey as "succeeded" | "failed"))}
+        onSelect={(_, seriesKey) => nav(toJobStatus(seriesKey === "succeeded" ? "succeeded" : "failed"))}
       />
     </ChartCard>
   );

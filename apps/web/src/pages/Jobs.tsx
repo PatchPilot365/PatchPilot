@@ -1,7 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { csvRow, WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH, WINGET_EXIT_NOT_WINGET_MANAGED } from "@patchpilot/shared";
+import {
+  csvRow,
+  needsManualAction,
+  WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH,
+  WINGET_EXIT_NOT_VISIBLE,
+  WINGET_EXIT_NOT_WINGET_MANAGED,
+} from "@patchpilot/shared";
 import {
   api,
   type BulkArchiveResult,
@@ -34,22 +40,18 @@ const NEEDS_ATTENTION_TITLES: Record<number, string> = {
     "The vulnerable copy isn't managed by winget on this device — most likely bundled with another product (such as Visual Studio or the .NET SDK). Update it through that product; retrying won't change the result.",
   [WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH]:
     "winget has a newer version, but it uses a different installer type than the installed copy (e.g. MSI vs MSIX), so winget won't upgrade it in place. Uninstall it and install the current version manually; retrying won't change the result.",
+  [WINGET_EXIT_NOT_VISIBLE]:
+    "winget can't find this package installed on the device — neither machine-wide nor for the signed-in user. It may be a portable copy, kept up to date by its own updater, or the inventory entry may be stale. Check the device by hand; retrying won't change the result.",
 };
 
 const NEEDS_ATTENTION_BATCH_TITLE =
   "These jobs can't be completed by PatchPilot on its own — hover each job's status for what to do. Retrying won't change the result.";
 
 /** A failed Live Response upgrade PatchPilot can't complete on its own (see
- *  WINGET_EXIT_NOT_WINGET_MANAGED, WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH). Still a
- *  failure — the device is still vulnerable — but one that needs manual action, not
- *  a retry. */
+ *  MANUAL_ACTION_EXIT_CODES in shared). Still a failure — the device is still
+ *  vulnerable — but one that needs manual action, not a retry. */
 function needsAttention(job: Job): boolean {
-  return (
-    job.status === "failed" &&
-    job.channel === "live-response" &&
-    job.exitCode !== null &&
-    job.exitCode in NEEDS_ATTENTION_TITLES
-  );
+  return needsManualAction(job) && job.exitCode !== null && job.exitCode in NEEDS_ATTENTION_TITLES;
 }
 
 function StatusChip({ job }: { job: Job }) {
