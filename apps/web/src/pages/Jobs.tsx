@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { csvRow } from "@patchpilot/shared";
+import { csvRow, WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH, WINGET_EXIT_NOT_WINGET_MANAGED } from "@patchpilot/shared";
 import {
   api,
   type BulkArchiveResult,
@@ -24,12 +24,50 @@ const STATUS_STYLES: Record<JobStatus, string> = {
   failed: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
 };
 
-function StatusChip({ status }: { status: JobStatus }) {
+const NEEDS_ATTENTION_STYLE =
+  "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
+
+/** Live Response verdicts that need manual action rather than a retry, with the
+ *  reason shown on hover. */
+const NEEDS_ATTENTION_TITLES: Record<number, string> = {
+  [WINGET_EXIT_NOT_WINGET_MANAGED]:
+    "The vulnerable copy isn't managed by winget on this device — most likely bundled with another product (such as Visual Studio or the .NET SDK). Update it through that product; retrying won't change the result.",
+  [WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH]:
+    "winget has a newer version, but it uses a different installer type than the installed copy (e.g. MSI vs MSIX), so winget won't upgrade it in place. Uninstall it and install the current version manually; retrying won't change the result.",
+};
+
+const NEEDS_ATTENTION_BATCH_TITLE =
+  "These jobs can't be completed by PatchPilot on its own — hover each job's status for what to do. Retrying won't change the result.";
+
+/** A failed Live Response upgrade PatchPilot can't complete on its own (see
+ *  WINGET_EXIT_NOT_WINGET_MANAGED, WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH). Still a
+ *  failure — the device is still vulnerable — but one that needs manual action, not
+ *  a retry. */
+function needsAttention(job: Job): boolean {
+  return (
+    job.status === "failed" &&
+    job.channel === "live-response" &&
+    job.exitCode !== null &&
+    job.exitCode in NEEDS_ATTENTION_TITLES
+  );
+}
+
+function StatusChip({ job }: { job: Job }) {
+  if (needsAttention(job)) {
+    return (
+      <span
+        className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${NEEDS_ATTENTION_STYLE}`}
+        title={NEEDS_ATTENTION_TITLES[job.exitCode ?? WINGET_EXIT_NOT_WINGET_MANAGED]}
+      >
+        Needs attention
+      </span>
+    );
+  }
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[status]}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[job.status]}`}
     >
-      {status}
+      {job.status}
     </span>
   );
 }
@@ -38,9 +76,21 @@ const STATUS_ORDER: JobStatus[] = ["failed", "running", "queued", "succeeded"];
 
 function BatchStatusSummary({ jobs }: { jobs: Job[] }) {
   const counts: Record<JobStatus, number> = { queued: 0, running: 0, succeeded: 0, failed: 0 };
-  for (const j of jobs) counts[j.status]++;
+  let attention = 0;
+  for (const j of jobs) {
+    if (needsAttention(j)) attention++;
+    else counts[j.status]++;
+  }
   return (
     <div className="flex flex-wrap gap-1">
+      {attention > 0 && (
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${NEEDS_ATTENTION_STYLE}`}
+          title={NEEDS_ATTENTION_BATCH_TITLE}
+        >
+          {attention} needs attention
+        </span>
+      )}
       {STATUS_ORDER.filter((s) => counts[s] > 0).map((s) => (
         <span
           key={s}
@@ -558,7 +608,7 @@ export function Jobs() {
             {CHANNEL_LABELS[job.channel] ?? job.channel}
           </td>
           <td className="px-5 py-3">
-            <StatusChip status={job.status} />
+            <StatusChip job={job} />
           </td>
           <td className="px-5 py-3 text-slate-600 dark:text-slate-300">{job.engineer}</td>
           <td className="px-5 py-3 text-slate-500 dark:text-slate-400">

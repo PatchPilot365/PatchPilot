@@ -16,6 +16,7 @@ import {
   annotateForeignName,
   normalizeTitle,
   resolveDisplaySoftwareName,
+  bundledComponent,
   deviceSlaCompliance,
   normalizeSlaThresholds,
   CLIENT_BUILDS,
@@ -313,6 +314,8 @@ export async function dataRoutes(app: FastifyInstance): Promise<void> {
       // over-report "out of winget scope" as the catalog/overrides evolve —
       // recompute live against the current catalog rather than trust them.
       const match = matcher(v.tenantId, v.software);
+      // WSL's bundled msrdc.exe etc. — fixed through the parent product's package.
+      const bundled = bundledComponent(v.software, ev?.diskPaths);
       // For a not-winget-remediable app, surface the alternate repos this
       // finding can still be driven through — live-matched against the
       // mirrored Chocolatey catalog, curated map as fallback (see
@@ -329,15 +332,15 @@ export async function dataRoutes(app: FastifyInstance): Promise<void> {
         // "Microsoft Edge (Chromium-based)" or "Google Chrome" depending on
         // disk-path evidence); the raw `software` above stays untouched since
         // it's still the join key for winget matching and the DB grain.
-        displayName: resolveDisplaySoftwareName(v.software, ev?.diskPaths),
+        displayName: bundled?.label ?? resolveDisplaySoftwareName(v.software, ev?.diskPaths),
         sla: { ...sla, chip: slaChipLabel(sla) },
         installedVersion: ev?.installedVersion ?? null,
         diskPaths: ev?.diskPaths ?? null,
         registryPaths: ev?.registryPaths ?? null,
         fixedOnDevice: defenderCaughtUp ? null : (fix ?? null),
         manuallyRemediated: manualByCve?.get(v.cveId) ?? null,
-        wingetRemediable: Boolean(match),
-        wingetPackageId: match?.packageId ?? null,
+        wingetRemediable: Boolean(bundled || match),
+        wingetPackageId: bundled?.packageId ?? match?.packageId ?? null,
         altSources,
       };
     });

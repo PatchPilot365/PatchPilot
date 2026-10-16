@@ -293,8 +293,24 @@ export function isOsMisattributedSoftware(software: string): boolean {
  */
 export function resolveMatchingTitle(title: string): string {
   const alias = UNAMBIGUOUS_DISPLAY_NAMES.get(title.trim().toLowerCase());
-  return alias ?? title;
+  if (alias) return alias;
+  const vsYear = VISUAL_STUDIO_IDE_TITLE.exec(title.trim());
+  if (vsYear) return `Visual Studio Community ${vsYear[1]}`;
+  return title;
 }
+
+/**
+ * Defender's edition-less Visual Studio title ("visual_studio_2022", "Microsoft
+ * Visual Studio 2022") means the IDE, but no catalog entry carries that exact
+ * name — each edition does ("Visual Studio Community 2022", "... Professional
+ * 2022"). Left to the fuzzy rules it landed on whichever sibling *contained* the
+ * phrase: "Remote Tools for Visual Studio 2022" (and BuildTools for 2019, VS Code
+ * for the "Microsoft ..." form), proven live — and Remote Tools' older
+ * latestVersion then made a behind IDE look up to date. Matched as Community, the
+ * free and most common edition; a device on another edition is upgraded through
+ * the Live Response script's edition-family fallback.
+ */
+const VISUAL_STUDIO_IDE_TITLE = /^(?:microsoft[ _])?visual[ _]studio[ _](20\d\d)$/i;
 
 /**
  * Curated, evidence-aware display name for a Defender-reported vulnerability's
@@ -496,6 +512,80 @@ export function wingetVersionGate(
   const t = target?.trim();
   if (!l || !t) return "unknown";
   return compareWingetVersions(l, t) >= 0 ? "ready" : "behind";
+}
+
+/**
+ * Splits a version-line package id into its family and the version line it
+ * pins: `Microsoft.DotNet.AspNetCore.10` -> family `Microsoft.DotNet.AspNetCore`,
+ * stem `10`; `Microsoft.DotNet.AspNetCore.3_1` -> stem `3.1`;
+ * `Python.Python.3.12` -> family `Python.Python`, stem `3.12`. The stem is the
+ * trailing run of purely numeric segments (an `_` inside a segment reads as a
+ * dot). Returns null for an id with no such run, or one that is nothing but it.
+ */
+export function wingetVersionFamily(packageId: string): { family: string; stem: string } | null {
+  const segments = packageId.split(".");
+  let i = segments.length;
+  while (i > 0 && /^\d+(?:_\d+)*$/.test(segments[i - 1]!)) i--;
+  if (i === segments.length || i === 0) return null;
+  return {
+    family: segments.slice(0, i).join("."),
+    stem: segments.slice(i).join(".").replace(/_/g, "."),
+  };
+}
+
+/**
+ * Display-only name for a finding matched to a version-line package: drops the
+ * trailing line ("Microsoft ASP.NET Core Runtime 10.0" -> "Microsoft ASP.NET Core
+ * Runtime") when it is the line `packageId` itself names. One finding row spans
+ * devices on several lines (and each job retargets per device — see
+ * {@link selectWingetFamilyMember}), so whichever line the row happened to match
+ * reads as if the finding were about that line only. Never feed the result back
+ * into matching, storage or job snapshots — those key on the stored name.
+ */
+export function versionLineFamilyName(name: string, packageId: string | null | undefined): string {
+  const family = packageId ? wingetVersionFamily(packageId) : null;
+  if (!family) return name;
+  const m = /^(.*\S)\s+v?(\d+(?:\.\d+)*)$/.exec(name.trim());
+  if (!m) return name;
+  const version = m[2]!;
+  return version === family.stem || version.startsWith(`${family.stem}.`) ? m[1]! : name;
+}
+
+/**
+ * Picks the member of `packageId`'s version-line family that a device's
+ * installed version actually belongs to, or null to keep `packageId`.
+ *
+ * Title matching can't make this call: `normalizeTitle` strips versions, so
+ * every ASP.NET Core runtime line normalises alike and a finding lands on
+ * whichever one wins the tie (see {@link isVariantOf}). One finding row also
+ * spans devices on different lines — a live tenant had 3.1, 6, 8, 9 and 10
+ * runtimes all under one "ASP.NET Core Runtime 10.0" row — so no single
+ * package id is right for every device. Proven live: a device carrying 8.0.31
+ * and 9.0.20 was sent `winget upgrade --id Microsoft.DotNet.AspNetCore.10`,
+ * which failed with 0x8A150014 because the device never had a 10.x runtime.
+ *
+ * `candidates` are the catalog ids to choose from (any ids outside the family
+ * are ignored). A candidate matches an installed version when that version is
+ * its stem or starts with stem + "."; the longest stem wins, so
+ * `AspNetCore.2_2_402` beats `AspNetCore.2_2` for 2.2.402.
+ */
+export function selectWingetFamilyMember(
+  packageId: string,
+  candidates: readonly string[],
+  installedVersion: string | null | undefined,
+): string | null {
+  const own = wingetVersionFamily(packageId);
+  const version = installedVersion?.trim();
+  if (!own || !version) return null;
+  let best: { id: string; stem: string } | null = null;
+  for (const id of candidates) {
+    const member = wingetVersionFamily(id);
+    if (!member || member.family.toLowerCase() !== own.family.toLowerCase()) continue;
+    if (version !== member.stem && !version.startsWith(`${member.stem}.`)) continue;
+    if (!best || member.stem.length > best.stem.length) best = { id, stem: member.stem };
+  }
+  if (!best || best.id.toLowerCase() === packageId.toLowerCase()) return null;
+  return best.id;
 }
 
 function tokens(s: string): Set<string> {
@@ -778,4 +868,84 @@ function computeWingetMatch(
   }
 
   return best;
+}
+
+export function sameSoftware(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** The first row when every row is the same product, else null (ambiguous). */
+export function onlyProduct<T extends { software: string }>(rows: T[]): T | null {
+  const [first] = rows;
+  return first && rows.every((r) => sameSoftware(r.software, first.software)) ? first : null;
+}
+
+/**
+ * The finding row a job is remediating, out of every row stored for its CVE.
+ * Matched on the job's package (or another member of its version-line family),
+ * then on the job's software snapshot; when neither decides it, only an
+ * unambiguous single-product CVE resolves — guessing would patch the wrong
+ * product (a Visual Studio job running the ASP.NET Core upgrade).
+ */
+export function pickJobFinding<T extends { software: string; wingetPackageId: string | null }>(
+  rows: T[],
+  packageId: string | null,
+  jobSoftware: string | null,
+): T | null {
+  if (packageId) {
+    const id = packageId.toLowerCase();
+    const exact = rows.find((r) => r.wingetPackageId?.toLowerCase() === id);
+    if (exact) return exact;
+    const family = wingetVersionFamily(packageId)?.family.toLowerCase();
+    const sibling =
+      family &&
+      rows.find((r) => r.wingetPackageId && wingetVersionFamily(r.wingetPackageId)?.family.toLowerCase() === family);
+    if (sibling) return sibling;
+  }
+  if (jobSoftware) {
+    const named = rows.find((r) => sameSoftware(r.software, jobSoftware));
+    if (named) return named;
+  }
+  return onlyProduct(rows);
+}
+
+/**
+ * A component Defender reports under its own title that actually ships inside
+ * another product, identified by disk-path evidence. Updating the parent
+ * product is the only fix, so it overrides the title's normal winget match.
+ */
+export interface BundledComponent {
+  /** Display-only label — never a matcher target or stored job software (attribution compares raw titles). */
+  label: string;
+  /** The parent product's winget package. */
+  packageId: string;
+}
+
+const BUNDLED_COMPONENTS: readonly {
+  titles: ReadonlySet<string>;
+  path: RegExp;
+  component: BundledComponent;
+}[] = [
+  {
+    // WSLg's Remote Desktop client (C:\Program Files\WSL\msrdc.exe), reported
+    // by Defender as "Remote Desktop" and otherwise matched to the standalone
+    // Microsoft.RemoteDesktopClient — which isn't installed there, so the
+    // upgrade fails "no installed package". A WSL update replaces it.
+    titles: new Set(["remote desktop", "remote_desktop", "microsoft remote desktop"]),
+    path: /[\\/]wsl[\\/]msrdc\.exe$/i,
+    component: { label: "Remote Desktop (bundled with WSL)", packageId: "Microsoft.WSL" },
+  },
+];
+
+export function bundledComponent(
+  software: string,
+  diskPaths?: readonly string[] | null,
+): BundledComponent | null {
+  const norm = software.trim().toLowerCase();
+  for (const rule of BUNDLED_COMPONENTS) {
+    if (rule.titles.has(norm) && (diskPaths ?? []).some((p) => rule.path.test(p.trim()))) {
+      return rule.component;
+    }
+  }
+  return null;
 }

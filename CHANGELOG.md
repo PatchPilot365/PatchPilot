@@ -12,6 +12,86 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- The device popout on the Devices page now uses most of the screen width
+  (up to 1536px, was 1024px), and its tab tables scroll sideways instead of
+  cutting off columns on smaller screens.
+- Bundled libraries such as Tukaani XZ Utils (liblzma.dll, shipped inside
+  OneDrive, Wireshark, Power BI and others) are now hidden from Software
+  Inventory and the device Software tab. They were already never matched to a
+  package; updating the host app is what replaces them.
+- Live Response jobs no longer leave an orphaned action on the device when a
+  status check hits a network error mid-poll; the error is logged and polling
+  continues (the action is still cancelled on timeout). Previously the
+  dispatch aborted with "execution error — fetch failed" and the device's next
+  job failed with `ActiveRequestAlreadyExists`.
+- When a job clears a stale action blocking the device
+  (`ActiveRequestAlreadyExists`), it now waits briefly and retries its own
+  action once, instead of failing after freeing the slot.
+- Upgrades winget refuses because the installed copy uses a different
+  installer type (exit 0x8A15008E, e.g. an MSI install of PowerShell) are now
+  reported as "Needs attention" with an uninstall-and-reinstall instruction,
+  instead of a raw winget exit code. PatchPilot does not uninstall to work
+  around it.
+- Scheduled CVE jobs now record the software name and device hostname, so they
+  no longer show blank on the Jobs page.
+- .NET Framework is now treated as part of Windows. Windows 10 and 11 include
+  it and patch it through the monthly .NET Framework cumulative update from
+  Windows Update. Defender reports every 4.x install as 4.0.0.0, so the
+  inventory used to show it as behind the winget 4.8.1 runtime installer, and
+  Fix Now jobs for it always failed. Software inventory now lists it as
+  "Windows Update" with Fix Now disabled. Its findings are handled as OS
+  findings, and scheduled sweeps skip it. Developer packs and the repair tool
+  are still treated as normal apps.
+- The software inventory now shows the latest .NET release for the major
+  version installed on each device (such as 9.0.x), instead of the newest
+  major. .NET versions install side by side, so a device on 9.0.21 showed
+  10.0.13 as its latest and Fix Now installed .NET 10 next to 9 without
+  patching it. Fix Now, preflight and Fix All now target that same package.
+- Fixed Live Response jobs for versioned packages such as the ASP.NET Core
+  runtimes failing with winget error 0x8A150014 ("no installed package found").
+  One finding can cover devices on several runtime versions (8, 9, 10) but
+  pointed at a single package. Each job now targets the package that matches
+  the version Defender reports for that device, and the "already up to date"
+  check uses that package's latest version.
+- When winget has nothing installed under the requested package but the device
+  has another package in the same family, the Live Response script now upgrades
+  that one instead, for example Visual Studio 2022 Community instead of Remote
+  Tools for Visual Studio 2022. If winget manages no package in the family, or
+  every package it manages is already current, the job ends with exit code 9.
+  The Jobs page shows that as an amber "Needs attention" status instead of
+  "Failed": the vulnerable copy probably comes bundled with another product
+  (such as Visual Studio or the .NET SDK) and has to be updated through it.
+- Fixed Defender's "Visual Studio 2022" findings matching the wrong winget
+  package. They matched Remote Tools for Visual Studio 2022, and its older
+  latest version could make an out-of-date Visual Studio look current.
+  "Microsoft Visual Studio 2022" also matched Visual Studio Code, and
+  "visual_studio_2019" matched BuildTools. These now match the Community
+  edition, and a device on Professional, Enterprise or BuildTools is upgraded
+  through the edition fallback. That fallback now only stands in a package of
+  the same kind (an edition for an edition, a runtime version for a runtime
+  version), so Visual Studio 2026 can no longer "upgrade" helper packages such
+  as Visual Studio Locator.
+- Fixed a Live Response job for one product upgrading a different product
+  that shares the same CVE. CVE-2026-88092 is listed against both Visual
+  Studio 2022 and the ASP.NET Core runtime, and a Visual Studio job ran the
+  ASP.NET Core upgrade instead. A single Run Now job now saves the package it
+  matched, as Fix All already did. The worker also picks the finding and the
+  device's installed version for the job's own product, and refuses to guess
+  when a shared CVE gives it no way to tell which product the job is for.
+  Scheduled jobs had the same problem: they now look up each device's finding
+  by CVE and product, and save the package they resolved.
+- Defender's "Remote Desktop" finding for the client bundled with WSL
+  (`C:\Program Files\WSL\msrdc.exe`) is now labelled "Remote Desktop (bundled
+  with WSL)" and fixed by updating WSL (`Microsoft.WSL`). It used to target the
+  standalone Microsoft Remote Desktop app, which isn't installed there, so the
+  upgrade failed with "no installed package". The standalone app is unaffected.
+- Software tied to a versioned package, such as "Microsoft ASP.NET Core
+  Runtime", no longer shows a version number in the Affected software card, the
+  Vulnerabilities list or a device's CVE list. The name used to carry whichever
+  runtime version PatchPilot matched (for example "10.0"), even though the
+  finding covers devices on several versions. The card also hides "Latest
+  version" for these packages, because each version has its own latest release.
+
 ## [1.0.6] - 2026-09-24
 
 - Fixed scheduled remediation of software with no CVE (the "None" severity

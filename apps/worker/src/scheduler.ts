@@ -10,6 +10,7 @@ import {
   isExclusionLive,
   isOsFinding,
   resolveDisplaySoftwareName,
+  bundledComponent,
   compareWingetVersions,
   altSourceFor,
   DEVICE_EXCLUSION_JUSTIFICATION_LABELS,
@@ -478,7 +479,10 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
     db.select().from(tables.wingetCatalog),
   ]);
 
-  const vulnByCve = new Map(vulns.map((v) => [v.cveId, v]));
+  // Keyed by CVE + software: one CVE can be listed against several products
+  // (Visual Studio and the ASP.NET Core runtime), each with its own package.
+  const vulnKey = (cveId: string, software: string) => `${cveId}\x1f${software.trim().toLowerCase()}`;
+  const vulnByKey = new Map(vulns.map((v) => [vulnKey(v.cveId, v.software), v]));
   const deviceByMachine = new Map(
     devices.filter((d) => d.defenderMachineId).map((d) => [d.defenderMachineId!, d]),
   );
@@ -521,10 +525,12 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
     link: (typeof links)[number];
     vuln: (typeof vulns)[number];
     device: (typeof devices)[number];
+    /** This device's winget package for the finding (see bundledComponent). */
+    packageId: string | null;
   };
   const groups = new Map<string, Candidate[]>();
   for (const link of links) {
-    const vuln = vulnByCve.get(link.cveId);
+    const vuln = vulnByKey.get(vulnKey(link.cveId, link.software));
     const device = deviceByMachine.get(link.defenderMachineId);
     if (!vuln || !device) continue;
     if (!isDeviceInScheduleScope(device.managedDeviceId, target, groupMemberIds)) continue;
@@ -538,7 +544,12 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
     // live Defender/Graph call, and no job row is created — a device that
     // patched itself between syncs (e.g. Chrome's own background updater)
     // shouldn't be redundantly re-dispatched by a weekly schedule.
-    const latestVersion = vuln.wingetPackageId ? wingetLatestById.get(vuln.wingetPackageId) : null;
+    // A bundled component's version (WSL's msrdc.exe) isn't comparable with
+    // its parent package's, so it skips the freshness check.
+    const bundled = bundledComponent(vuln.software, link.diskPaths);
+    const packageId = bundled?.packageId ?? vuln.wingetPackageId;
+    const latestVersion =
+      !bundled && vuln.wingetPackageId ? wingetLatestById.get(vuln.wingetPackageId) : null;
     if (
       link.softwareVersion &&
       latestVersion &&
@@ -550,11 +561,11 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
 
     const fixKey = hasCatalogOverride
       ? "override"
-      : (overrideWingetPackageId ?? vuln.wingetPackageId ?? `sw:${vuln.software}`);
+      : (overrideWingetPackageId ?? packageId ?? `sw:${vuln.software}`);
     const groupKey = `${device.id}\x1f${fixKey}`;
     const bucket = groups.get(groupKey);
-    if (bucket) bucket.push({ link, vuln, device });
-    else groups.set(groupKey, [{ link, vuln, device }]);
+    if (bucket) bucket.push({ link, vuln, device, packageId });
+    else groups.set(groupKey, [{ link, vuln, device, packageId }]);
   }
 
   for (const candidates of groups.values()) {
@@ -567,7 +578,8 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
         (SEVERITY_RANK[a.vuln.severity as keyof typeof SEVERITY_RANK] ?? 0);
       return rankDiff !== 0 ? rankDiff : a.vuln.cveId.localeCompare(b.vuln.cveId);
     });
-    const { vuln, device } = candidates[0]!;
+    const { vuln, device, packageId } = candidates[0]!;
+    const wingetPackageId = overrideWingetPackageId ?? packageId;
     // The primary's own id is stored separately as `cveId` — this column is
     // only the *additional* CVEs riding along on the same dispatch.
     const coveredCveIds =
@@ -593,8 +605,8 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
         title: vuln.title,
         software: vuln.software,
         severity: vuln.severity,
-        wingetRemediable: vuln.wingetRemediable,
-        wingetPackageId: overrideWingetPackageId ?? vuln.wingetPackageId,
+        wingetRemediable: vuln.wingetRemediable || Boolean(packageId),
+        wingetPackageId,
       },
       device: {
         id: device.id,
@@ -622,7 +634,7 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
       overrideScript ??
       remediationScript({
         channel,
-        wingetPackageId: overrideWingetPackageId ?? vuln.wingetPackageId,
+        wingetPackageId,
         software: vuln.software,
         source: overrideSource,
         altPackageId: overrideAltPackageId,
@@ -635,7 +647,9 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
       cveId: vuln.cveId,
       channel,
       engineer,
-      packageId: overrideWingetPackageId,
+      // Saved even without an override, so the worker never has to guess
+      // which product a CVE shared by several is being fixed for.
+      packageId: overrideSource ? overrideWingetPackageId : wingetPackageId,
       source: overrideSource,
       altPackageId: overrideAltPackageId,
     };
@@ -645,6 +659,8 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
       status: "queued",
       batchId,
       scheduleId: schedule.id,
+      software: vuln.software,
+      deviceHostname: device.hostname,
     });
 
     await remediationQueue.add("remediate", scheduledJobPayload(job, script));

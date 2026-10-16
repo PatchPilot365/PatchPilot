@@ -52,6 +52,7 @@ interface ChecklistItem {
   fixable: boolean;
   wingetPackageId: string | null;
   upToDate: boolean;
+  windowsUpdate: boolean;
 }
 
 type WhenMode = "now" | "once";
@@ -135,6 +136,7 @@ export function SoftwareInventoryFixAllModal({
           fixable: d.fixable,
           wingetPackageId: d.wingetPackageId,
           upToDate: d.upToDate,
+          windowsUpdate: d.windowsUpdate,
         }));
     }
     const rows = deviceInventoryQuery.data ?? [];
@@ -147,6 +149,7 @@ export function SoftwareInventoryFixAllModal({
       fixable: !!r.packageSource,
       wingetPackageId: r.wingetPackageId,
       upToDate: r.upToDate,
+      windowsUpdate: r.windowsUpdate,
     }));
   }, [target.kind, devicesQuery.data, deviceInventoryQuery.data]);
 
@@ -206,7 +209,7 @@ export function SoftwareInventoryFixAllModal({
     const nextPackageIds: Record<string, string> = {};
     for (const item of items) {
       nextPackageIds[item.key] = item.wingetPackageId ?? "";
-      if (item.fixable && item.wingetPackageId && !item.upToDate) nextSelected.add(item.key);
+      if (item.fixable && item.wingetPackageId && !item.upToDate && !item.windowsUpdate) nextSelected.add(item.key);
     }
     setSelected(nextSelected);
     setPackageIds(nextPackageIds);
@@ -352,7 +355,7 @@ export function SoftwareInventoryFixAllModal({
                             type="checkbox"
                             className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                             checked={checked}
-                            disabled={item.upToDate}
+                            disabled={item.upToDate || item.windowsUpdate}
                             onChange={() => toggle(item.key)}
                           />
                           <div className="min-w-0 flex-1">
@@ -366,7 +369,9 @@ export function SoftwareInventoryFixAllModal({
                               </div>
                             </div>
                             <div className="text-xs text-slate-400 dark:text-slate-500">{item.sublabel}</div>
-                            {item.upToDate ? (
+                            {item.windowsUpdate ? (
+                              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Part of Windows — updated by Windows Update.</p>
+                            ) : item.upToDate ? (
                               <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Already up to date.</p>
                             ) : checked ? (
                               <WingetPicker

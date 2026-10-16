@@ -29,6 +29,7 @@ import {
   resolveTargetBuild,
   CLIENT_BUILDS,
   type InstallScope,
+  versionLineFamilyName,
 } from "@patchpilot/shared";
 import { downloadCsv } from "../lib/csv";
 import { useTenant } from "../lib/tenant";
@@ -58,6 +59,7 @@ import {
   SlaChip,
   SlideOver,
   UNSUPPORTED_REMEDIATION_REASON,
+  WINDOWS_UPDATE_REASON,
   type ResponsiveTableColumn,
 } from "../components/ui";
 import {
@@ -1591,6 +1593,7 @@ export function Devices() {
         onClose={closeDetail}
         title={selected?.hostname ?? ""}
         subtitle="Device"
+        wide
       >
         {selected && (
           <div className="space-y-6">
@@ -1952,7 +1955,7 @@ export function Devices() {
                       : "No software matches your search."}
                   </p>
                 ) : (
-                  <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -1977,7 +1980,7 @@ export function Devices() {
                           // Not gated on packageSource: RunNowModal always has a
                           // path (Manual, or a live Microsoft Store search) even
                           // when there's no pre-matched winget/chocolatey entry.
-                          const canFix = !s.upToDate;
+                          const canFix = !s.upToDate && !s.windowsUpdate;
                           return (
                             <tr
                               key={s.softwareId}
@@ -2005,7 +2008,9 @@ export function Devices() {
                                   />
                                 </div>
                               </td>
-                              <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{s.latestVersion ?? "—"}</td>
+                              <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                                {s.windowsUpdate ? "Windows Update" : (s.latestVersion ?? "—")}
+                              </td>
                               <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{s.weaknessCount}</td>
                               <td className="px-4 py-2.5 text-right">
                                 <button
@@ -2015,7 +2020,13 @@ export function Devices() {
                                     setInventoryFixTarget(s);
                                   }}
                                   disabled={!canFix}
-                                  title={s.upToDate ? "Already up to date." : undefined}
+                                  title={
+                                    s.windowsUpdate
+                                      ? WINDOWS_UPDATE_REASON
+                                      : s.upToDate
+                                        ? "Already up to date."
+                                        : undefined
+                                  }
                                   className="shrink-0 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500"
                                 >
                                   Fix now
@@ -2236,7 +2247,7 @@ export function Devices() {
                                 <td className="px-4 py-2.5">
                                   <div className="min-w-0">
                                     <div className="truncate font-medium text-slate-800 dark:text-slate-100">
-                                      {v.displayName ?? v.software}
+                                      {versionLineFamilyName(v.displayName ?? v.software, v.wingetPackageId)}
                                     </div>
                                     {/* Latin anchor for a non-Latin software name. */}
                                     {hasNonLatinScript(v.software) && v.publisher && (
@@ -2324,7 +2335,7 @@ export function Devices() {
                           : "No software matches your search."}
                       </p>
                     ) : (
-                      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -2406,7 +2417,7 @@ export function Devices() {
                           : "No components match your search."}
                       </p>
                     ) : (
-                      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -2487,7 +2498,7 @@ export function Devices() {
                           : "No updates match your search."}
                       </p>
                     ) : (
-                      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -2598,7 +2609,7 @@ export function Devices() {
                           : "No recommendations match your search."}
                       </p>
                     ) : (
-                      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -3136,7 +3147,7 @@ export function Devices() {
                 <div className="flex justify-between gap-4">
                   <dt className="text-slate-500 dark:text-slate-400">Latest version</dt>
                   <dd className="font-medium text-slate-800 dark:text-slate-100">
-                    {inventoryDetail.latestVersion ?? "—"}
+                    {inventoryDetail.windowsUpdate ? "Windows Update" : (inventoryDetail.latestVersion ?? "—")}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
@@ -3160,8 +3171,14 @@ export function Devices() {
             <button
               type="button"
               onClick={() => setInventoryFixTarget(inventoryDetail)}
-              disabled={inventoryDetail.upToDate}
-              title={inventoryDetail.upToDate ? "Already up to date." : undefined}
+              disabled={inventoryDetail.upToDate || inventoryDetail.windowsUpdate}
+              title={
+                inventoryDetail.windowsUpdate
+                  ? WINDOWS_UPDATE_REASON
+                  : inventoryDetail.upToDate
+                    ? "Already up to date."
+                    : undefined
+              }
               className="shrink-0 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500"
             >
               Fix now

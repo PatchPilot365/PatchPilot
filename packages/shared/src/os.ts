@@ -210,6 +210,18 @@ const WINDOWS_APP_EXCEPTIONS =
   /^windows (terminal|app sdk|subsystem|admin center|package manager|installer|defender)\b/i;
 
 /**
+ * .NET Framework 4.x is a Windows component: Windows 10/11 ship 4.8/4.8.1 in
+ * the box and its security fixes arrive as the monthly .NET Framework
+ * cumulative update via Windows Update. Defender reports every 4.x install as
+ * "4.0.0.0", so a catalog match (`Microsoft.DotNet.Framework.Runtime`, the
+ * 4.8.1 offline installer) always reads as out of date while installing it
+ * patches nothing. Developer packs / repair tools are genuine installers and
+ * stay app findings.
+ */
+const DOTNET_FRAMEWORK = /^(microsoft )?\.net framework\b/;
+const DOTNET_FRAMEWORK_TOOLS = /\b(developer pack|targeting pack|repair tool|sdk)\b/;
+
+/**
  * Whether a vulnerability finding or inventory title targets the Windows OS
  * itself, or a Microsoft security-platform component serviced the same way —
  * patched via Windows Update / the Defender platform updater — rather than an
@@ -242,6 +254,7 @@ export function isOsFinding(software: string | null | undefined): boolean {
     /^microsoft windows\b/.test(s) ||
     /^windows (10|11|7|8|8\.1|server|vista|xp)\b/.test(s) ||
     /^windows server\b/.test(s) ||
-    /^microsoft defender\b/.test(s)
+    /^microsoft defender\b/.test(s) ||
+    (DOTNET_FRAMEWORK.test(s) && !DOTNET_FRAMEWORK_TOOLS.test(s))
   );
 }

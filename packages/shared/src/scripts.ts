@@ -267,6 +267,123 @@ const WINGET_INSTALL_FLAGS =
   "--exact --silent --source winget --disable-interactivity --accept-source-agreements --accept-package-agreements --force";
 
 /**
+ * Live Response library-script verdict: the vulnerable package is not managed by
+ * winget on this device (most likely bundled with another product), so PatchPilot
+ * can't update it directly. Still a failed job — the device remains vulnerable — but
+ * one that needs manual action rather than a retry.
+ */
+export const WINGET_EXIT_NOT_WINGET_MANAGED = 9;
+
+/**
+ * Live Response library-script verdict: winget found a newer version but refused to
+ * upgrade because it ships with a different installer technology than the copy on
+ * the device (0x8A15008E, APPINSTALLER_CLI_ERROR_INSTALL_TECHNOLOGY_MISMATCH, e.g.
+ * an MSI install of PowerShell where the catalog's newer release is a different
+ * installer type). winget's own remedy is to uninstall and reinstall. PatchPilot
+ * deliberately doesn't do that unattended (it removes the product, with its
+ * settings and integrations, before the new copy is in place), so this is a failed
+ * job that needs manual action rather than a retry, like `WINGET_EXIT_NOT_WINGET_MANAGED`.
+ */
+export const WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH = 10;
+
+/** winget's own exit code for the install-technology mismatch (0x8A15008E). */
+const WINGET_INSTALL_TECHNOLOGY_MISMATCH_HRESULT = -1978335090;
+
+/**
+ * Upgrade-branch fallback for the Live Response library script, for when winget has
+ * no installed package under the exact id it was given (0x8A150014,
+ * NO_APPLICATIONS_FOUND) but the id is one member of a family the device may hold a
+ * different member of:
+ *
+ *  - version lines: `Microsoft.DotNet.AspNetCore.10` sent to a device that has
+ *    `Microsoft.DotNet.AspNetCore.8` (Defender reports one finding across every
+ *    runtime line, and title matching strips the version that would tell them apart);
+ *  - editions: `Microsoft.VisualStudio.2022.Community` sent to a device that has
+ *    `...2022.Professional` (Defender reports plain "Visual Studio 2022", which the
+ *    matcher maps to Community — see `resolveMatchingTitle`).
+ *
+ * Version lines proven live (a pilot device, ASP.NET Core). The family is the id minus its last
+ * segment, and only when that segment is a version line or an IDE edition token — a
+ * plain `Vendor.Product` id never widens to every package from the vendor. Members are
+ * read from a non-exact `winget list --id <family>`, kept only when they are exactly
+ * one segment deeper *and* that segment is the same kind (version line for version
+ * line, edition for edition — `Microsoft.VisualStudio.Community` must not stand in
+ * via `Microsoft.VisualStudio.Locator`; Remote Tools is a separate product, not an
+ * edition), and each upgraded under the same before/after verdict as the main path.
+ *
+ * When winget manages no family member at all, or manages members that are all
+ * already current, the vulnerable copy came from somewhere winget can't see —
+ * typically a runtime bundled by Visual Studio or the .NET SDK (proven live: a pilot device's
+ * x64 ASP.NET Core 8/9 came from "Microsoft .NET SDK … from Visual Studio", beside a
+ * current winget-managed x86 AspNetCore.8). Both end with
+ * `WINGET_EXIT_NOT_WINGET_MANAGED`, which the Jobs page shows as "Needs attention"
+ * rather than a plain failure: retrying can't help, the owning product has to be
+ * updated. Never compliant (6) — an up-to-date sibling says nothing about the
+ * vulnerable copy.
+ */
+const WINGET_FAMILY_FALLBACK = `  # 0x8A150014 APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND - nothing installed under this exact id.
+  $wingetNoApplicationsFound = -1978335212
+  $familyPrefix = $null
+  $memberSegment = $null
+  $lastDot = $packageId.LastIndexOf('.')
+  if (-not $after -and $wingetExit -eq $wingetNoApplicationsFound -and $lastDot -gt 0) {
+    $lastSegment = $packageId.Substring($lastDot + 1)
+    foreach ($segmentKind in @('^\\d+(_\\d+)*$', '^(Community|Professional|Enterprise|BuildTools)$')) {
+      if ($lastSegment -match $segmentKind) {
+        $familyPrefix = $packageId.Substring(0, $lastDot)
+        $memberSegment = $segmentKind
+      }
+    }
+  }
+  if ($familyPrefix) {
+    $familyListing = & $winget list --id $familyPrefix --source winget --accept-source-agreements --disable-interactivity 2>&1
+    $memberPattern = '^' + [regex]::Escape($familyPrefix) + '\\.[^\\s.]+$'
+    $members = @()
+    foreach ($line in $familyListing) {
+      foreach ($token in [regex]::Split(([string]$line).Trim(), '\\s+')) {
+        # Same kind of last segment as the requested id: a version line only stands in
+        # for a version line, an edition for an edition - never Microsoft.VisualStudio.Locator.
+        if ($token -match $memberPattern -and $token.Substring($familyPrefix.Length + 1) -match $memberSegment -and $token -ne $packageId -and $members -notcontains $token) { $members += $token }
+      }
+    }
+    if ($members.Count -eq 0) {
+      Complete-PatchPilotRun -Code ${WINGET_EXIT_NOT_WINGET_MANAGED} -Message @(
+        "winget has no installed package matching $packageId or any other $familyPrefix.* package (winget exited $wingetExit).",
+        'The vulnerable copy is not managed by winget - it is most likely bundled with another product (such as Visual Studio or the .NET SDK) and has to be updated through that product.'
+      )
+    }
+    Write-Output "PatchPilot: $packageId is not installed, but winget manages these $familyPrefix.* packages: $($members -join ', '). Upgrading those instead."
+    $changed = @()
+    $unchanged = @()
+    $memberFailExit = 0
+    foreach ($member in $members) {
+      $memberBefore = Get-PatchPilotInstalledVersion -Winget $winget -PackageId $member
+      & $winget upgrade --id $member ${WINGET_UPGRADE_FLAGS}
+      $memberExit = $LASTEXITCODE
+      $memberAfter = Get-PatchPilotInstalledVersion -Winget $winget -PackageId $member
+      Write-Output "PatchPilot: $member - winget exited $memberExit; installed version is now '$memberAfter' (was '$memberBefore')."
+      if ($memberAfter -and $memberAfter -ne $memberBefore) {
+        $changed += "$member '$memberBefore' -> '$memberAfter'"
+      } else {
+        $unchanged += "$member ('$memberAfter')"
+        if ($memberExit -ne 0 -and $memberExit -ne $wingetUpdateNotApplicable) { $memberFailExit = $memberExit }
+      }
+    }
+    if ($changed.Count -gt 0) {
+      $summary = @("Upgraded in place of $packageId (not installed): $($changed -join '; ').")
+      if ($unchanged.Count -gt 0) { $summary += "Unchanged: $($unchanged -join '; ')." }
+      Complete-PatchPilotRun -Code 0 -Message $summary
+    }
+    if ($memberFailExit -ne 0) {
+      Complete-PatchPilotRun -Code $memberFailExit -Message "winget exited $memberFailExit and no $familyPrefix.* package was upgraded."
+    }
+    Complete-PatchPilotRun -Code ${WINGET_EXIT_NOT_WINGET_MANAGED} -Message @(
+      "$packageId is not installed, and the $familyPrefix.* packages winget does manage are already at their newest version: $($unchanged -join '; ').",
+      'The vulnerable copy Defender found is not one of them - most likely a copy bundled with another product (such as Visual Studio or the .NET SDK), which has to be updated through that product.'
+    )
+  }`;
+
+/**
  * Child script for the per-user scheduled-task upgrade path (see
  * `USER_CONTEXT_RUNNER`). winget's install scope follows the *running
  * account*, not a flag SYSTEM can pass it, so a per-user (HKCU) install is
@@ -307,6 +424,8 @@ ${WINGET_INSTALLED_VERSION_FN}
     Write-PatchPilotChildResult -Code 0 -Message "$packageId upgraded '$before' -> '$after'."
   } elseif ($wingetExit -eq $wingetUpdateNotApplicable) {
     Write-PatchPilotChildResult -Code 6 -Message "$packageId is already at the newest version winget has available ('$after')."
+  } elseif ($wingetExit -eq ${WINGET_INSTALL_TECHNOLOGY_MISMATCH_HRESULT}) {
+    Write-PatchPilotChildResult -Code ${WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH} -Message "$packageId '$after' was installed with a different installer type than winget's newer release, so winget will not upgrade it in place. Uninstall it and install the current version manually."
   } elseif ($wingetExit -ne 0) {
     Write-PatchPilotChildResult -Code $wingetExit -Message "winget exited $wingetExit and $packageId was not upgraded."
   } else {
@@ -630,6 +749,10 @@ export function wingetLiveResponseLibraryScript(): string {
 #     Compliant, not a failure.
 #   7 install scope is "user" but no interactively logged-on user was found
 #   8 the per-user scheduled task failed to register, run, or report back in time
+#   ${WINGET_EXIT_NOT_WINGET_MANAGED} upgrade: the package (and its version-line/edition family) is not managed by
+#     winget here - most likely bundled with another product. Needs manual action.
+#   ${WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH} upgrade: winget has a newer version, but its installer type differs from the
+#     installed copy's (e.g. MSI vs MSIX), so it will only uninstall + reinstall. Needs manual action.
 #   anything else = winget's own exit code (including for verbs other than
 #   upgrade/uninstall, which have no version-based verdict of their own).
 $ErrorActionPreference = 'Stop'
@@ -697,6 +820,15 @@ if ($verb -eq 'upgrade') {
   Write-Output "PatchPilot: winget exited $wingetExit; installed version is now '$after' (was '$before')."
   if ($after -and $after -ne $before) {
     Complete-PatchPilotRun -Code 0 -Message "$packageId upgraded '$before' -> '$after'."
+  }
+${WINGET_FAMILY_FALLBACK}
+  # 0x8A15008E APPINSTALLER_CLI_ERROR_INSTALL_TECHNOLOGY_MISMATCH - a newer version exists,
+  # but winget will only replace this copy by uninstalling it first. Not done unattended.
+  if ($wingetExit -eq ${WINGET_INSTALL_TECHNOLOGY_MISMATCH_HRESULT}) {
+    Complete-PatchPilotRun -Code ${WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH} -Message @(
+      "winget found a newer version of $packageId, but it uses a different installer type than the copy installed here ('$after'), so winget will not upgrade it in place.",
+      'Uninstall the current copy and install the newest version manually (or with winget install) - PatchPilot does not remove software unattended to work around this.'
+    )
   }
   if ($wingetExit -eq $wingetUpdateNotApplicable) {
     Complete-PatchPilotRun -Code 6 -Message "$packageId is already at the newest version winget has available ('$after'); no update was applicable."

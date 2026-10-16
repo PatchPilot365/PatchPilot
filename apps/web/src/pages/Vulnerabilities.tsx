@@ -7,6 +7,7 @@ import {
   detectMicrosoftStoreInstall,
   isOsFinding,
   requiresManualRemediation,
+  versionLineFamilyName,
 } from "@patchpilot/shared";
 import {
   api,
@@ -1072,7 +1073,9 @@ export function Vulnerabilities() {
       mobileLabel: "Software",
       cell: (v) => (
         <>
-          <div className="font-medium text-slate-800 dark:text-slate-100">{v.displayName ?? v.software}</div>
+          <div className="font-medium text-slate-800 dark:text-slate-100">
+            {versionLineFamilyName(v.displayName ?? v.software, v.wingetPackageId)}
+          </div>
           {v.publisher && <div className="text-xs text-slate-400 dark:text-slate-500">{v.publisher}</div>}
           <ManualRemediationTag software={v.software} className="mt-1" />
         </>
