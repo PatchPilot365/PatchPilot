@@ -12,6 +12,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- undici updated to 8.11.2 (from 7.29.1).
+- New `scripts/start-dev.ps1` for local development: starts Docker Desktop,
+  the dev containers and the api/worker/web dev servers, skipping anything
+  already running. `-Register` sets it up to run at sign-in.
+
 ## [1.0.8] - 2026-10-16
 
 - Dependency security updates: fastify 5.12.7, fast-uri 3.1.8, ip-address
