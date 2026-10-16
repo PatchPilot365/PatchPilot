@@ -284,7 +284,9 @@ async function refreshLocalDevApi(version) {
   const logPath = path.join(os.tmpdir(), `patchpilot-dev-api-${port}.log`);
   const out = openSync(logPath, "a");
   const err = openSync(logPath, "a");
-  const child = spawn("pnpm", ["--filter", "@patchpilot/api", "dev:resilient"], {
+  // One command string, not command + args: pnpm is a .cmd shim that needs
+  // shell:true, and Node deprecates (DEP0190) passing args alongside it.
+  const child = spawn("pnpm --filter @patchpilot/api dev:resilient", {
     cwd: ROOT,
     detached: true,
     stdio: ["ignore", out, err],
