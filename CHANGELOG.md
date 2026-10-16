@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.8] - 2026-10-16
+
 - Dependency security updates: fastify 5.12.7, fast-uri 3.1.8, ip-address
   10.7.4 and shell-quote 1.12.0 on the server side; vitest 4.1.12 (from 2.1.9),
   vite 6.4.4, postcss, nanoid and other build and test tooling refreshed.
