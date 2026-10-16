@@ -18,11 +18,9 @@ import { useCan } from "../lib/auth";
 import { DateTimePicker } from "./DateTimePicker";
 import { WingetPicker } from "./FixAllModal";
 import { MsStoreChip, ScopeChip, SlideOver } from "./ui";
-import {
-  defaultWin32DeployOptions,
-  Win32DeployOptionsPanel,
-  type Win32DeployOptionsValue,
-} from "./Win32DeployOptionsPanel";
+import { Win32DeployOptionsPanel } from "./Win32DeployOptionsPanel";
+import { type Win32DeployOptionsValue } from "./win32DeployOptions";
+import { defaultWin32DeployOptions } from "./win32DeployOptions";
 
 /**
  * Bulk "Fix All" dialog for the software-inventory surfaces — either every

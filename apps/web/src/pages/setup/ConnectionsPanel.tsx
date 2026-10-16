@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type OnboardingReport } from "../../lib/api";
 import { GRAPH_WRITE_GATED_SCOPES, DEFENDER_WRITE_GATED_SCOPES } from "@patchpilot/shared";
 import { Card } from "../../components/ui";
-import { ScopeList, type ScopeStatus } from "../../components/ScopeList";
+import { ScopeList } from "../../components/ScopeList";
+import { type ScopeStatus } from "../../components/scopeStatus";
 
 interface ConnectionRow {
   name: string;

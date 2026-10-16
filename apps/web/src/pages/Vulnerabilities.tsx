@@ -8,6 +8,7 @@ import {
   isOsFinding,
   requiresManualRemediation,
   versionLineFamilyName,
+  slaTone,
 } from "@patchpilot/shared";
 import {
   api,
@@ -26,38 +27,10 @@ import { ExceptionModal } from "../components/ExceptionModal";
 import { MissingKbFixNowModal } from "../components/MissingKbFixNowModal";
 import { MissingKbFixAllModal } from "../components/MissingKbFixAllModal";
 import { downloadCsv } from "../lib/csv";
-import {
-  Card,
-  DetailRow,
-  isRemediableType,
-  ManualRemediationTag,
-  MsStoreChip,
-  PageHeader,
-  ResponsiveTable,
-  ScopeChip,
-  SeverityChip,
-  SlaChip,
-  slaTone,
-  SlideOver,
-  UNSUPPORTED_REMEDIATION_REASON,
-  type ResponsiveTableColumn,
-} from "../components/ui";
-import {
-  CveDetailBody,
-  CveSortableTh,
-  daysAgo,
-  DetectionEvidence,
-  ExploitChip,
-  formatDate,
-  RemediationBadge,
-  remediationRoute,
-  SeverityCounts,
-  SEVERITY_ORDER,
-  SEVERITY_RANK,
-  SortIcon,
-  type CveSortKey,
-  type SortDir,
-} from "../components/cve";
+import { Card, DetailRow, ManualRemediationTag, MsStoreChip, PageHeader, ResponsiveTable, ScopeChip, SeverityChip, SlaChip, SlideOver, UNSUPPORTED_REMEDIATION_REASON, type ResponsiveTableColumn } from "../components/ui";
+import { isRemediableType } from "../components/remediationType";
+import { CveDetailBody, CveSortableTh, DetectionEvidence, ExploitChip, RemediationBadge, SeverityCounts, SEVERITY_ORDER, SEVERITY_RANK, SortIcon, type CveSortKey, type SortDir } from "../components/cve";
+import { daysAgo, formatDate, remediationRoute } from "../components/cveFormat";
 import { toRemediationHistoryCve } from "./dashboard/links";
 
 /** Loose enough to catch a pasted CVE id regardless of the reporter's own

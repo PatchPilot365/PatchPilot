@@ -24,7 +24,7 @@ import { exitAfterReply } from "../restart-after-reply.js";
  *
  * Gated on `!config.ENTRA_CONFIGURED` — the exact condition under which
  * <SetupPairing> is the only thing an unauthenticated visitor can reach in
- * the first place (see lib/auth.tsx's AuthGate). Once paired for real, or
+ * the first place (see lib/AuthGate.tsx). Once paired for real, or
  * once already in demo mode (config.ts:218 forces ENTRA_CONFIGURED=true
  * whenever DEMO_MODE=true), this 400s — there is no in-app way back out of
  * demo mode today, matching pairing's own one-way nature.

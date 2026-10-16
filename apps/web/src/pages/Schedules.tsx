@@ -7,8 +7,8 @@ import { useTenant } from "../lib/tenant";
 import { Card, PageHeader, ResponsiveTable, type ResponsiveTableColumn } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
 import { NewScheduleModal } from "../components/NewScheduleModal";
-import { describeCron, describeTimeZone } from "../components/RecurrencePicker";
-import { CHANNEL_LABELS, summarizeTarget } from "../components/ScheduleTargetFields";
+import { describeCron, describeTimeZone } from "../components/recurrence";
+import { CHANNEL_LABELS, summarizeTarget } from "../components/scheduleTarget";
 
 /** Shape returned by POST /api/schedules/:id/run. */
 interface RunNowResult {

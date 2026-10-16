@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,47 +36,17 @@ import { useTenant } from "../lib/tenant";
 import { SummarizeButton } from "../components/ai/SummarizeButton";
 import { RunNowModal } from "../components/RunNowModal";
 import { ExceptionModal } from "../components/ExceptionModal";
-import {
-  DeviceExclusionModal,
-  invalidateExclusionQueries,
-} from "../components/DeviceExclusionModal";
+import { DeviceExclusionModal } from "../components/DeviceExclusionModal";
+import { invalidateExclusionQueries } from "../components/exclusionQueries";
 import { AddToGroupModal } from "../components/AddToGroupModal";
 import { MissingKbFixNowModal } from "../components/MissingKbFixNowModal";
 import { FixAllModal, type FixAllConfirmPayload } from "../components/FixAllModal";
 import { SoftwareInventoryFixAllModal } from "../components/SoftwareInventoryFixAllModal";
 import { WizardShell } from "../components/WizardShell";
-import {
-  Card,
-  ComplianceChip,
-  isRemediableType,
-  ManualRemediationTag,
-  MsStoreChip,
-  PageHeader,
-  prettyRemediationType,
-  ResponsiveTable,
-  ScopeChip,
-  SeverityChip,
-  SlaChip,
-  SlideOver,
-  UNSUPPORTED_REMEDIATION_REASON,
-  WINDOWS_UPDATE_REASON,
-  type ResponsiveTableColumn,
-} from "../components/ui";
-import {
-  CveDetailBody,
-  DetectionEvidence,
-  ExceptionChip,
-  FixedOnDeviceChip,
-  FixedOnDeviceNote,
-  formatDate,
-  RemediationBadge,
-  SeverityCounts,
-  SEVERITY_ORDER,
-  SEVERITY_RANK,
-  SortIcon,
-  type FixedOnDevice,
-  type SortDir,
-} from "../components/cve";
+import { Card, ComplianceChip, ManualRemediationTag, MsStoreChip, PageHeader, ResponsiveTable, ScopeChip, SeverityChip, SlaChip, SlideOver, UNSUPPORTED_REMEDIATION_REASON, WINDOWS_UPDATE_REASON, type ResponsiveTableColumn } from "../components/ui";
+import { isRemediableType, prettyRemediationType } from "../components/remediationType";
+import { CveDetailBody, DetectionEvidence, ExceptionChip, FixedOnDeviceChip, FixedOnDeviceNote, RemediationBadge, SeverityCounts, SEVERITY_ORDER, SEVERITY_RANK, SortIcon, type FixedOnDevice, type SortDir } from "../components/cve";
+import { formatDate } from "../components/cveFormat";
 
 // One remediable software group on a device: the whole device's findings for a
 // single product rolled up to the worst-severity CVE, which seeds the Run Now
@@ -1033,23 +1003,26 @@ export function Devices() {
 
   // Search + sort applied to the software/components sub-tabs (shared search
   // filter, matching by name/software/publisher).
-  const filterRunTargets = (rows: DeviceRunTarget[]) => {
-    if (!findingsQuery) return rows;
-    return rows.filter(
-      (t) =>
-        (t.displayName ?? "").toLowerCase().includes(findingsQuery) ||
-        t.software.toLowerCase().includes(findingsQuery) ||
-        (t.publisher ?? "").toLowerCase().includes(findingsQuery),
-    );
-  };
+  const filterRunTargets = useCallback(
+    (rows: DeviceRunTarget[]) => {
+      if (!findingsQuery) return rows;
+      return rows.filter(
+        (t) =>
+          (t.displayName ?? "").toLowerCase().includes(findingsQuery) ||
+          t.software.toLowerCase().includes(findingsQuery) ||
+          (t.publisher ?? "").toLowerCase().includes(findingsQuery),
+      );
+    },
+    [findingsQuery],
+  );
   const sortedAppRunTargets = useMemo(
     () => sortRunTargets(filterRunTargets(appRunTargets), runTargetSortKey, runTargetSortDir),
-    [appRunTargets, findingsQuery, runTargetSortKey, runTargetSortDir],
+    [appRunTargets, filterRunTargets, runTargetSortKey, runTargetSortDir],
   );
   const sortedComponentRunTargets = useMemo(
     () =>
       sortRunTargets(filterRunTargets(componentRunTargets), runTargetSortKey, runTargetSortDir),
-    [componentRunTargets, findingsQuery, runTargetSortKey, runTargetSortDir],
+    [componentRunTargets, filterRunTargets, runTargetSortKey, runTargetSortDir],
   );
 
   // Search + sort applied to the OS sub-tab (matching by KB id/title/products).

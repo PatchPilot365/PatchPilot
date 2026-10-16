@@ -7,7 +7,8 @@ import { Card, DetailRow, SlideOver } from "../../components/ui";
 import { downloadCsv } from "../../lib/csv";
 import { useSortableTable } from "../../lib/useSortableTable";
 import { SortableTh } from "../../components/SortableTh";
-import { AssignmentSummary, assignmentSummaryText } from "../../components/AssignmentSummary";
+import { AssignmentSummary } from "../../components/AssignmentSummary";
+import { assignmentSummaryText } from "../../components/assignmentSummaryText";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });

@@ -1,29 +1,7 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Tenant } from "./api";
-
-/**
- * Sentinel activeTenantId meaning "aggregate across every tenant". Data routes
- * return all rows when no tenantId query param is sent, so pages translate this
- * sentinel into an unfiltered request. It's a value that can never be a real
- * Entra tenant id, so it round-trips through the switcher safely.
- */
-export const ALL_TENANTS = "__all__";
-
-interface TenantCtx {
-  tenants: Tenant[];
-  /** Only the tenants PatchPilot can actually reach — what the switcher offers. */
-  reachableTenants: Tenant[];
-  activeTenantId: string | null;
-  setActiveTenantId: (id: string) => void;
-  /** The selected tenant, or null when "All Tenants" (or nothing) is active. */
-  activeTenant: Tenant | null;
-  /** True when the aggregate "All Tenants" view is selected. */
-  isAllTenants: boolean;
-  isLoading: boolean;
-}
-
-const Ctx = createContext<TenantCtx | null>(null);
+import { ALL_TENANTS, TenantContext } from "./tenant";
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
@@ -58,7 +36,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     : tenants.find((t) => t.tenantId === resolvedActive) ?? null;
 
   return (
-    <Ctx.Provider
+    <TenantContext.Provider
       value={{
         tenants,
         reachableTenants,
@@ -70,12 +48,6 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-    </Ctx.Provider>
+    </TenantContext.Provider>
   );
-}
-
-export function useTenant(): TenantCtx {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("useTenant must be used within TenantProvider");
-  return ctx;
 }

@@ -1,7 +1,7 @@
 import type { DashboardPerTenant } from "../../lib/api";
 import { useTenant } from "../../lib/tenant";
 import { Card } from "../../components/ui";
-import { relativeTime } from "./TenantHealthStrip";
+import { relativeTime } from "./relativeTime";
 
 export function TenantComparisonCard({
   perTenant,

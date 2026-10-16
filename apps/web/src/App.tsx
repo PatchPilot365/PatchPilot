@@ -4,10 +4,12 @@ import type { Permission } from "@patchpilot/shared";
 import { Sidebar } from "./components/Sidebar";
 import { MobileSidebarDrawer } from "./components/MobileSidebarDrawer";
 import { TenantSwitcher } from "./components/TenantSwitcher";
-import { TenantProvider } from "./lib/tenant";
-import { AuthGate, useEngineer, useCan, useLogout } from "./lib/auth";
-import { ThemeProvider, ThemeToggle } from "./lib/theme";
-import { SidebarUiProvider, useSidebarUi } from "./lib/sidebarUi";
+import { TenantProvider } from "./lib/TenantProvider";
+import { useEngineer, useCan, useLogout } from "./lib/auth";
+import { AuthGate } from "./lib/AuthGate";
+import { ThemeProvider, ThemeToggle } from "./lib/ThemeProvider";
+import { useSidebarUi } from "./lib/sidebarUi";
+import { SidebarUiProvider } from "./lib/SidebarUiProvider";
 import { useApplyBrandingVars } from "./lib/branding";
 import { PageHeader, Placeholder } from "./components/ui";
 import { Dashboard } from "./pages/dashboard/Dashboard";
@@ -83,7 +85,7 @@ function EngineerMenu() {
 }
 
 /** Hamburger toggle for the mobile nav drawer — hidden at `lg` and up, where
- *  the persistent `Sidebar` is visible instead. See lib/sidebarUi.tsx. */
+ *  the persistent `Sidebar` is visible instead. See lib/SidebarUiProvider.tsx. */
 function MobileMenuButton() {
   const { openMobile } = useSidebarUi();
   return (

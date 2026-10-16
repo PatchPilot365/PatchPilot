@@ -8,7 +8,8 @@ import { Card, DetailRow, SlideOver } from "../../components/ui";
 import { downloadCsv } from "../../lib/csv";
 import { useSortableTable } from "../../lib/useSortableTable";
 import { SortableTh } from "../../components/SortableTh";
-import { AssignmentSummary, assignmentSummaryText } from "../../components/AssignmentSummary";
+import { AssignmentSummary } from "../../components/AssignmentSummary";
+import { assignmentSummaryText } from "../../components/assignmentSummaryText";
 import { DropdownButton } from "../../components/DropdownButton";
 import { NewFeatureUpdateCampaignModal } from "../../components/NewFeatureUpdateCampaignModal";
 

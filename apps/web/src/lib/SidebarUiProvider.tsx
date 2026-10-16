@@ -1,23 +1,8 @@
-// Desktop collapse (persisted) and mobile drawer (ephemeral) state for the
-// Sidebar. Deliberately localStorage, not server-side, unlike theme.tsx's
-// engineer-level preference — this is browser-local UI chrome, not a
-// cross-device identity attribute (see lib/theme.tsx's header comment on why
-// *that* preference follows the engineer instead).
-
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
+import { SidebarUiContext } from "./sidebarUi";
 
 const COLLAPSED_KEY = "pp:sidebar-collapsed";
-
-interface SidebarUiContextValue {
-  collapsed: boolean;
-  toggleCollapsed: () => void;
-  mobileOpen: boolean;
-  openMobile: () => void;
-  closeMobile: () => void;
-}
-
-const SidebarUiContext = createContext<SidebarUiContextValue | null>(null);
 
 export function SidebarUiProvider({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(() => {
@@ -61,12 +46,4 @@ export function SidebarUiProvider({ children }: { children: ReactNode }) {
       {children}
     </SidebarUiContext.Provider>
   );
-}
-
-export function useSidebarUi(): SidebarUiContextValue {
-  const ctx = useContext(SidebarUiContext);
-  if (!ctx) {
-    throw new Error("useSidebarUi must be used within SidebarUiProvider");
-  }
-  return ctx;
 }

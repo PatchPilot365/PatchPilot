@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { csvRow, WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH, WINGET_EXIT_NOT_WINGET_MANAGED } from "@patchpilot/shared";
@@ -230,10 +230,16 @@ export function Jobs() {
 
   // Prefer the dispatch-time snapshot; only fall back to the live join for
   // legacy rows (software / deviceHostname null) predating that column.
-  const resolveSoftware = (job: Job): string | undefined =>
-    job.software ?? (job.cveId ? softwareByCve.get(job.cveId) : undefined);
-  const resolveHostname = (job: Job): string | undefined =>
-    job.deviceHostname ?? (job.deviceId ? hostnameByDeviceId.get(job.deviceId) : undefined);
+  const resolveSoftware = useCallback(
+    (job: Job): string | undefined =>
+      job.software ?? (job.cveId ? softwareByCve.get(job.cveId) : undefined),
+    [softwareByCve],
+  );
+  const resolveHostname = useCallback(
+    (job: Job): string | undefined =>
+      job.deviceHostname ?? (job.deviceId ? hostnameByDeviceId.get(job.deviceId) : undefined),
+    [hostnameByDeviceId],
+  );
 
   const visibleJobs = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -257,7 +263,7 @@ export function Jobs() {
       const bVal = b[sortKey] ?? "";
       return dir * aVal.localeCompare(bVal);
     });
-  }, [jobs, search, statusFilter, channelFilter, sortKey, sortDir, softwareByCve, hostnameByDeviceId]);
+  }, [jobs, search, statusFilter, channelFilter, sortKey, sortDir, resolveSoftware, resolveHostname]);
 
   const channelOptions = useMemo(
     () => Array.from(new Set(jobs.map((j) => j.channel))),
@@ -277,22 +283,25 @@ export function Jobs() {
     | { kind: "group"; groupKey: string; jobs: Job[] }
     | { kind: "single"; job: Job };
 
-  function groupKeyOf(job: Job): string | null {
-    switch (groupBy) {
-      case "batch":
-        return job.batchId;
-      case "schedule":
-        return job.scheduleId;
-      case "cve":
-        return job.cveId;
-      case "software":
-        return resolveSoftware(job) ?? null;
-      case "device":
-        return job.deviceId;
-      case "none":
-        return null;
-    }
-  }
+  const groupKeyOf = useCallback(
+    (job: Job): string | null => {
+      switch (groupBy) {
+        case "batch":
+          return job.batchId;
+        case "schedule":
+          return job.scheduleId;
+        case "cve":
+          return job.cveId;
+        case "software":
+          return resolveSoftware(job) ?? null;
+        case "device":
+          return job.deviceId;
+        case "none":
+          return null;
+      }
+    },
+    [groupBy, resolveSoftware],
+  );
 
   const rows = useMemo<JobRow[]>(() => {
     const byKey = new Map<string, Job[]>();
@@ -317,7 +326,7 @@ export function Jobs() {
       }
     }
     return result;
-  }, [visibleJobs, groupBy]);
+  }, [visibleJobs, groupKeyOf]);
 
   function groupLabel(groupJobs: Job[]): string {
     const first = groupJobs[0]!;

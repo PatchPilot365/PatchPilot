@@ -33,7 +33,7 @@ export class ApiError extends Error {
   }
 }
 
-// Double-submit CSRF token, handed to us by GET /auth/me (see auth.tsx's
+// Double-submit CSRF token, handed to us by GET /auth/me (see AuthGate.tsx's
 // AuthGate) and echoed back on every mutating call below. Module-level
 // rather than React state: this file has no React dependency of its own and
 // request() is the one choke point every api.* call already funnels through.

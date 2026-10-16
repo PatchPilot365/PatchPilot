@@ -50,7 +50,7 @@ export default tseslint.config(
       // Compiler, so those rules are noise here, not signal.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
-      "react-refresh/only-export-components": "warn",
+      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },
   {

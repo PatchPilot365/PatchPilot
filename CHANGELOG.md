@@ -20,6 +20,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   restarts the local dev API. The api and worker supervisors share an
   identical command line; the release script now tells them apart by their
   parent process chain.
+- Lint now runs clean with zero warnings. Shared helpers, types and context
+  hooks moved out of component files into their own modules, so the web
+  UI's hot reload works on every component file. A few list views (Jobs,
+  device findings, tenant consent) no longer re-sort or regroup on renders
+  where nothing changed.
 
 ## [1.0.10] - 2026-10-16
 

@@ -2,7 +2,7 @@
 
 /* Class-based dark mode (Tailwind v4 defaults to `prefers-color-scheme`-only
  * `dark:` behavior) — toggled via the `dark` class on <html>, set by
- * lib/theme.tsx from the signed-in engineer's own preference, not the OS. */
+ * lib/ThemeProvider.tsx from the signed-in engineer's own preference, not the OS. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Pre-hydration fallback only — matches lib/branding.ts's BRANDING_DEFAULTS.

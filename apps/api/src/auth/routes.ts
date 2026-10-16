@@ -623,7 +623,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           });
 
           return reply.type("text/html").send(postMessagePage({ ok: true, result }, origin, "patchpilot-check-access"));
-        } catch (_err) {
+        } catch {
           // Same reasoning as the other silent flows' failure paths — an
           // expected outcome the panel's own fallback already covers.
           return reply.type("text/html").send(postMessagePage({ ok: false }, origin, "patchpilot-check-access"));
@@ -1359,7 +1359,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         // BEFORE deciding whether to redirect to /auth/login at all — that
         // redirect is a dead end on a fresh, unpaired instance (Microsoft
         // rejects a blank client_id), so the SPA shows the pairing setup
-        // screen instead. See apps/web/src/lib/auth.tsx.
+        // screen instead. See apps/web/src/lib/AuthGate.tsx.
         return reply.code(401).send({ authenticated: false, entraConfigured: config.ENTRA_CONFIGURED });
       }
       // Lazily issued rather than only at login: a session created before this
