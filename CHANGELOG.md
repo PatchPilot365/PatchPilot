@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.12] - 2026-10-16
+
 - `pnpm release` no longer prints a Node DEP0190 deprecation warning when it
   restarts the local dev API.
 - The web app loads faster. Each page is now downloaded the first time it is
