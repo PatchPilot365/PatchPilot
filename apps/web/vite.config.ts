@@ -52,6 +52,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // userEvent-driven form tests in jsdom run close to vitest's 5s default on
+    // cold CI runners (NewScheduleModal's create flow hit ~5.1s), which failed
+    // the v1.0.11 release workflow on timing alone.
+    testTimeout: 15_000,
     exclude: ["**/node_modules/**", "**/e2e/**"],
   },
 });
