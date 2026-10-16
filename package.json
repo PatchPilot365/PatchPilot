@@ -5,7 +5,7 @@
   "description": "Self-hosted, multi-tenant MSP patch management console (Defender/MDVM -> Winget/WUA remediation).",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "turbo run dev",
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.20.2",
+    "@types/node": "^24.19.2",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",

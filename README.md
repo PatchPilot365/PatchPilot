@@ -68,7 +68,7 @@ Tooling: **pnpm workspaces + Turborepo**. PostgreSQL (Drizzle) + Redis (BullMQ).
 Entra app**. Auth is bypassed with a demo engineer and all data is served from
 in-memory fixtures, so the console is instantly clickable.
 
-Prereqs: Node 22+, pnpm 9+.
+Prereqs: Node 24+, pnpm 9+.
 
 ```bash
 pnpm install
@@ -201,7 +201,7 @@ lags upstream and occasionally regresses under headless PDF rendering), switch
 browser instead of the system package:
 
 ```dockerfile
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 # ...
 RUN npx playwright install --with-deps chromium
 ```
