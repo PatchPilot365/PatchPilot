@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.11] - 2026-10-16
+
 - Container images now run on Node.js 24 LTS (node:24-alpine, from
   node:22-alpine). CI and the release workflow build on Node 24, and local
   development now needs Node 24 or newer.
