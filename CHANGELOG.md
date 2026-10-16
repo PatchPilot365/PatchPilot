@@ -12,6 +12,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Dependency security updates: fastify 5.12.7, fast-uri 3.1.8, ip-address
+  10.7.4 and shell-quote 1.12.0 on the server side; vitest 4.1.12 (from 2.1.9),
+  vite 6.4.4, postcss, nanoid and other build and test tooling refreshed.
+  Clears the open Dependabot alerts apart from one esbuild alert in
+  drizzle-kit's migration tooling, which never runs in production images.
+
 ## [1.0.7] - 2026-10-16
 
 - The device popout on the Devices page now uses most of the screen width
