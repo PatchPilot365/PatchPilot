@@ -4,6 +4,7 @@ import { StackedBarChart } from "../../components/charts/StackedBarChart";
 import { JOB_STATUS_TOKENS } from "../../lib/palette";
 import type { DashboardRemediation } from "../../lib/api";
 import { toJobStatus } from "./links";
+import { remediationSubtitle } from "./remediationSubtitle";
 
 const SERIES = [
   { key: "succeeded", label: JOB_STATUS_TOKENS.succeeded.label, fill: JOB_STATUS_TOKENS.succeeded.fill },
@@ -27,15 +28,10 @@ export function RemediationThroughputCard({
     rate: d.succeeded + d.failed > 0 ? Math.round((d.succeeded / (d.succeeded + d.failed)) * 100) : null,
   }));
 
-  const subtitle =
-    total === 0
-      ? "No remediation runs in this window"
-      : `${total} runs · ${remediation.successRate ?? 0}% success · ${remediation.failedLast24h} failed in last 24h`;
-
   return (
     <ChartCard
       title="Remediation throughput"
-      subtitle={subtitle}
+      subtitle={remediationSubtitle(remediation)}
       height={240}
       isLoading={isLoading}
       isEmpty={total === 0}
