@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Routes, Route, Outlet, Navigate } from "react-router-dom";
 import type { Permission } from "@patchpilot/shared";
 import { Sidebar } from "./components/Sidebar";
@@ -11,36 +11,44 @@ import { ThemeProvider, ThemeToggle } from "./lib/ThemeProvider";
 import { useSidebarUi } from "./lib/sidebarUi";
 import { SidebarUiProvider } from "./lib/SidebarUiProvider";
 import { useApplyBrandingVars } from "./lib/branding";
+import { lazyPage } from "./lib/lazyPage";
 import { PageHeader, Placeholder } from "./components/ui";
-import { Dashboard } from "./pages/dashboard/Dashboard";
-import { Vulnerabilities } from "./pages/Vulnerabilities";
-import { Recommendations } from "./pages/Recommendations";
-import { Devices } from "./pages/Devices";
-import { Branding } from "./pages/settings/Branding";
-import { Sla } from "./pages/settings/Sla";
-import { Notifications } from "./pages/settings/Notifications";
-import { WindowsUpdatePolicies } from "./pages/settings/WindowsUpdatePolicies";
-import { Tenants } from "./pages/settings/Tenants";
-import { License } from "./pages/settings/License";
-import { Updates } from "./pages/settings/Updates";
-import { ServerHealth } from "./pages/settings/ServerHealth";
-import { SetupHealth } from "./pages/setup/SetupHealth";
-import { AppRegistration } from "./pages/setup/AppRegistration";
-import { ArchitecturePage } from "./pages/setup/architecture/ArchitecturePage";
-import { Catalog } from "./pages/Catalog";
-import { ChocolateyCatalog } from "./pages/ChocolateyCatalog";
-import { ScriptCatalog } from "./pages/ScriptCatalog";
-import { Schedules } from "./pages/Schedules";
-import { DeviceGroups } from "./pages/DeviceGroups";
-import { Jobs } from "./pages/Jobs";
-import { SoftwareInventory } from "./pages/SoftwareInventory";
-import { AuditLog } from "./pages/AuditLog";
-import { RemediationHistory } from "./pages/RemediationHistory";
-import { Users } from "./pages/settings/Users";
-import { Reports } from "./pages/Reports";
-import { Help } from "./pages/Help";
 import { ChatWidget } from "./components/ai/ChatWidget";
 import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner";
+
+// Each page is its own chunk, fetched on first visit (see lib/lazyPage.ts).
+const Dashboard = lazyPage(() => import("./pages/dashboard/Dashboard"), "Dashboard");
+const Vulnerabilities = lazyPage(() => import("./pages/Vulnerabilities"), "Vulnerabilities");
+const Recommendations = lazyPage(() => import("./pages/Recommendations"), "Recommendations");
+const Devices = lazyPage(() => import("./pages/Devices"), "Devices");
+const Branding = lazyPage(() => import("./pages/settings/Branding"), "Branding");
+const Sla = lazyPage(() => import("./pages/settings/Sla"), "Sla");
+const Notifications = lazyPage(() => import("./pages/settings/Notifications"), "Notifications");
+const WindowsUpdatePolicies = lazyPage(() => import("./pages/settings/WindowsUpdatePolicies"), "WindowsUpdatePolicies");
+const Tenants = lazyPage(() => import("./pages/settings/Tenants"), "Tenants");
+const License = lazyPage(() => import("./pages/settings/License"), "License");
+const Updates = lazyPage(() => import("./pages/settings/Updates"), "Updates");
+const ServerHealth = lazyPage(() => import("./pages/settings/ServerHealth"), "ServerHealth");
+const SetupHealth = lazyPage(() => import("./pages/setup/SetupHealth"), "SetupHealth");
+const AppRegistration = lazyPage(() => import("./pages/setup/AppRegistration"), "AppRegistration");
+const ArchitecturePage = lazyPage(() => import("./pages/setup/architecture/ArchitecturePage"), "ArchitecturePage");
+const Catalog = lazyPage(() => import("./pages/Catalog"), "Catalog");
+const ChocolateyCatalog = lazyPage(() => import("./pages/ChocolateyCatalog"), "ChocolateyCatalog");
+const ScriptCatalog = lazyPage(() => import("./pages/ScriptCatalog"), "ScriptCatalog");
+const Schedules = lazyPage(() => import("./pages/Schedules"), "Schedules");
+const DeviceGroups = lazyPage(() => import("./pages/DeviceGroups"), "DeviceGroups");
+const Jobs = lazyPage(() => import("./pages/Jobs"), "Jobs");
+const SoftwareInventory = lazyPage(() => import("./pages/SoftwareInventory"), "SoftwareInventory");
+const AuditLog = lazyPage(() => import("./pages/AuditLog"), "AuditLog");
+const RemediationHistory = lazyPage(() => import("./pages/RemediationHistory"), "RemediationHistory");
+const Users = lazyPage(() => import("./pages/settings/Users"), "Users");
+const Reports = lazyPage(() => import("./pages/Reports"), "Reports");
+const Help = lazyPage(() => import("./pages/Help"), "Help");
+
+/** Suspense fallback while a page's chunk downloads — usually a few frames. */
+function PageLoading() {
+  return <div className="text-sm text-slate-400">Loading…</div>;
+}
 
 /**
  * Persistent reminder that everything on screen is fictional sample data —
@@ -144,7 +152,9 @@ function Layout() {
             </header>
             <UpdateAvailableBanner />
             <main className="flex-1 overflow-y-auto bg-slate-50 px-4 py-7 sm:px-8 print:h-auto print:overflow-visible dark:bg-slate-950">
-              <Outlet />
+              <Suspense fallback={<PageLoading />}>
+                <Outlet />
+              </Suspense>
             </main>
           </div>
           {canUseAi && <ChatWidget />}
