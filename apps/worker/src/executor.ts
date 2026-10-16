@@ -1,9 +1,15 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import { db, tables } from "@patchpilot/db";
 import {
   CHANNEL_SPECS,
   isExclusionLive,
   compareWingetVersions,
+  selectWingetFamilyMember,
+  pickJobFinding,
+  bundledComponent,
+  onlyProduct,
+  sameSoftware,
+  wingetVersionFamily,
   DEVICE_EXCLUSION_JUSTIFICATION_LABELS,
   type RemediationJob,
   type Win32Source,
@@ -64,6 +70,31 @@ const HOME_TENANT_ID = env.ENTRA_TENANT_ID;
 
 function notPerformed(label: string, reason: string): ExecutionResult {
   return { exitCode: 1, output: `${label}: no write performed — ${reason}` };
+}
+
+/**
+ * The member of `packageId`'s version-line family (`Microsoft.DotNet.AspNetCore.8`,
+ * `.9`, `.10`, ...) that a device's Defender-reported `installedVersion` belongs
+ * to, or `packageId` unchanged when it isn't a version-line id or no catalog
+ * sibling fits. A finding row spans devices on several lines but carries one
+ * package id, so this is decided per device here rather than once at sync —
+ * see selectWingetFamilyMember.
+ */
+async function resolveDevicePackageId(packageId: string, installedVersion: string): Promise<string> {
+  const family = wingetVersionFamily(packageId);
+  if (!family) return packageId;
+  const escaped = family.family.replace(/[\\%_]/g, "\\$&");
+  const siblings = await db
+    .select({ packageId: tables.wingetCatalog.packageId })
+    .from(tables.wingetCatalog)
+    .where(ilike(tables.wingetCatalog.packageId, `${escaped}.%`));
+  return (
+    selectWingetFamilyMember(
+      packageId,
+      siblings.map((s) => s.packageId),
+      installedVersion,
+    ) ?? packageId
+  );
 }
 
 export async function executeRemediation(
@@ -147,8 +178,22 @@ export async function executeRemediation(
     // device is the schedule working correctly, not a blocked write — so this
     // resolves on the normal succeeded path (exitCode 0) with the reason
     // folded into `output`, rather than a new job status.
-    if (payload.cveId && device?.defenderMachineId) {
-      const [vuln] = await db
+    //
+    // Also captures the device's Defender-reported version of the vulnerable
+    // software, which picks the right version-line package below.
+    //
+    // One CVE can be listed against several products (CVE-2026-88092 covers
+    // both Visual Studio and the ASP.NET Core runtime), so the finding and the
+    // device link are picked for THIS job's product — see pickJobFinding.
+    let deviceVersion: string | null = null;
+    let finding: typeof tables.vulnerabilities.$inferSelect | null = null;
+    if (payload.cveId) {
+      const [job] = await db
+        .select({ software: tables.jobs.software })
+        .from(tables.jobs)
+        .where(eq(tables.jobs.id, payload.jobId))
+        .limit(1);
+      const vulns = await db
         .select()
         .from(tables.vulnerabilities)
         .where(
@@ -156,38 +201,47 @@ export async function executeRemediation(
             eq(tables.vulnerabilities.tenantId, payload.tenantId),
             eq(tables.vulnerabilities.cveId, payload.cveId),
           ),
-        )
-        .limit(1);
-      if (vuln?.wingetPackageId) {
-        const [link] = await db
+        );
+      finding = pickJobFinding(vulns, payload.packageId ?? null, job?.software ?? null);
+    }
+    if (payload.cveId && device?.defenderMachineId) {
+      const links = await db
+        .select()
+        .from(tables.deviceVulnerabilities)
+        .where(
+          and(
+            eq(tables.deviceVulnerabilities.tenantId, payload.tenantId),
+            eq(tables.deviceVulnerabilities.defenderMachineId, device.defenderMachineId),
+            eq(tables.deviceVulnerabilities.cveId, payload.cveId),
+          ),
+        );
+      const link = finding
+        ? links.find((l) => sameSoftware(l.software, finding!.software))
+        : onlyProduct(links);
+      deviceVersion = link?.softwareVersion ?? null;
+      const vuln = finding;
+      // A bundled component's version (WSL's msrdc.exe) can't be compared
+      // against any catalog version, so it never short-circuits as up to date.
+      if (vuln?.wingetPackageId && link?.softwareVersion && !bundledComponent(vuln.software, link.diskPaths)) {
+        // Compare against the version line the device is actually on: a 9.0.21
+        // runtime is fully patched even though the finding's package is AspNetCore.10.
+        const devicePackageId = await resolveDevicePackageId(vuln.wingetPackageId, link.softwareVersion);
+        const [catalogEntry] = await db
           .select()
-          .from(tables.deviceVulnerabilities)
-          .where(
-            and(
-              eq(tables.deviceVulnerabilities.tenantId, payload.tenantId),
-              eq(tables.deviceVulnerabilities.defenderMachineId, device.defenderMachineId),
-              eq(tables.deviceVulnerabilities.cveId, payload.cveId),
-            ),
-          )
+          .from(tables.wingetCatalog)
+          .where(eq(tables.wingetCatalog.packageId, devicePackageId))
           .limit(1);
-        if (link?.softwareVersion) {
-          const [catalogEntry] = await db
-            .select()
-            .from(tables.wingetCatalog)
-            .where(eq(tables.wingetCatalog.packageId, vuln.wingetPackageId))
-            .limit(1);
-          if (
-            catalogEntry?.latestVersion &&
-            compareWingetVersions(link.softwareVersion, catalogEntry.latestVersion) >= 0
-          ) {
-            return {
-              exitCode: 0,
-              output:
-                `[skipped — already up to date] ${spec.label}: ${device.hostname} already has ` +
-                `${vuln.software} ${link.softwareVersion}, which meets or exceeds the catalog's ` +
-                `latest known version (${catalogEntry.latestVersion}). No write performed.`,
-            };
-          }
+        if (
+          catalogEntry?.latestVersion &&
+          compareWingetVersions(link.softwareVersion, catalogEntry.latestVersion) >= 0
+        ) {
+          return {
+            exitCode: 0,
+            output:
+              `[skipped — already up to date] ${spec.label}: ${device.hostname} already has ` +
+              `${vuln.software} ${link.softwareVersion}, which meets or exceeds the catalog's ` +
+              `latest known version (${catalogEntry.latestVersion}). No write performed.`,
+          };
         }
       }
     }
@@ -224,19 +278,7 @@ export async function executeRemediation(
           win32Source = "script";
           win32PackageId = payload.altPackageId;
         }
-        if (!win32PackageId && payload.cveId) {
-          const [vuln] = await db
-            .select()
-            .from(tables.vulnerabilities)
-            .where(
-              and(
-                eq(tables.vulnerabilities.tenantId, payload.tenantId),
-                eq(tables.vulnerabilities.cveId, payload.cveId),
-              ),
-            )
-            .limit(1);
-          win32PackageId = vuln?.wingetPackageId ?? undefined;
-        }
+        win32PackageId ??= finding?.wingetPackageId ?? undefined;
         if (!win32PackageId) {
           return notPerformed(
             spec.label,
@@ -443,27 +485,26 @@ export async function executeRemediation(
         // stored mapping. Software-inventory jobs have no CVE at all, so this
         // is the only source of the package id for them — only fall back to
         // the vulnerabilities table when there's a CVE to look up.
-        let wingetId = payload.packageId ?? undefined;
-        if (!wingetId && payload.cveId) {
-          const [vuln] = await db
-            .select()
-            .from(tables.vulnerabilities)
-            .where(
-              and(
-                eq(tables.vulnerabilities.tenantId, payload.tenantId),
-                eq(tables.vulnerabilities.cveId, payload.cveId),
-              ),
-            )
-            .limit(1);
-          wingetId = vuln?.wingetPackageId ?? undefined;
-        }
+        let wingetId = payload.packageId ?? finding?.wingetPackageId ?? undefined;
         if (!wingetId) {
           return notPerformed(
             spec.label,
             "only winget-remediable findings run via Live Response today (no mapped winget package for this software)",
           );
         }
-        return runLiveResponseRemediation({
+        // A finding mapped to one version line (AspNetCore.10) is sent to the
+        // line this device actually has (AspNetCore.8) — see resolveDevicePackageId.
+        let familyNote = "";
+        if (deviceVersion) {
+          const devicePackageId = await resolveDevicePackageId(wingetId, deviceVersion);
+          if (devicePackageId !== wingetId) {
+            familyNote =
+              `PatchPilot: ${device!.hostname} has version ${deviceVersion}, which belongs to ` +
+              `${devicePackageId}, not ${wingetId}; targeting ${devicePackageId}.\n`;
+            wingetId = devicePackageId;
+          }
+        }
+        const result = await runLiveResponseRemediation({
           engineer: payload.engineer,
           homeTenantId: HOME_TENANT_ID,
           tenantId: payload.tenantId,
@@ -471,9 +512,10 @@ export async function executeRemediation(
           packageId: wingetId,
           installScope: payload.installScope,
           action: payload.action,
-          onProgress,
+          onProgress: onProgress && familyNote ? (t) => onProgress(familyNote + t) : onProgress,
           control,
         });
+        return familyNote ? { ...result, output: familyNote + result.output } : result;
       }
 
       // The remaining channels each require tenant-side configuration we do not

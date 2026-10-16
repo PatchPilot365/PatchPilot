@@ -13,6 +13,8 @@ import {
   remediationScript,
   wingetLiveResponseLibraryScript,
   WIN32_SCRIPT_MARKER_KEY,
+  WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH,
+  WINGET_EXIT_NOT_WINGET_MANAGED,
 } from "./scripts.js";
 
 describe("remediationScript", () => {
@@ -520,6 +522,100 @@ describe("wingetLiveResponseLibraryScript", () => {
       .filter((line) => !line.startsWith("#"));
     expect(body.join("\n")).not.toContain("Write-Output");
     expect(script.indexOf("$script:PatchPilotListing | ForEach-Object")).toBeGreaterThan(fnEnd);
+  });
+
+  describe("package-family fallback", () => {
+    const familyAt = upgradeBlock.indexOf("# 0x8A150014 APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND");
+    // Up to the main path's own verdicts, which resume after the fallback.
+    const family = upgradeBlock.slice(familyAt, upgradeBlock.indexOf("if ($wingetExit -eq $wingetUpdateNotApplicable) {"));
+
+    it("runs only after the exact-id upgrade, and only when winget found nothing under that id", () => {
+      // A changed version already ended the run with code 0 above it.
+      expect(familyAt).toBeGreaterThan(upgradeBlock.indexOf("if ($after -and $after -ne $before) {"));
+      expect(family).toContain("$wingetNoApplicationsFound = -1978335212");
+      expect(family).toContain("if (-not $after -and $wingetExit -eq $wingetNoApplicationsFound");
+    });
+
+    it("widens only a version-line or edition id, never a plain Vendor.Product", () => {
+      // Microsoft.DotNet.AspNetCore.10 / .3_1, Microsoft.VisualStudio.2022.Community.
+      // A bare "Google.Chrome" must not become "every Google.* package".
+      expect(family).toContain("@('^\\d+(_\\d+)*$', '^(Community|Professional|Enterprise|BuildTools)$')");
+      expect(family).toContain("if ($lastSegment -match $segmentKind) {");
+      // Remote Tools is its own product: upgrading it fixes nothing in the IDE.
+      expect(family).not.toContain("RemoteTools");
+    });
+
+    it("keeps only members whose last segment is the same kind as the requested id's", () => {
+      // Microsoft.VisualStudio.Community (VS 2026) widens to Microsoft.VisualStudio.*,
+      // which must not pick up Locator / SlnGen / ConfigFinder and report them upgraded.
+      expect(family).toContain("$memberSegment = $segmentKind");
+      expect(family).toContain("$token.Substring($familyPrefix.Length + 1) -match $memberSegment");
+    });
+
+    it("upgrades only direct siblings, each with its own before/after verdict", () => {
+      expect(family).toContain("& $winget list --id $familyPrefix --source winget");
+      expect(family).not.toMatch(/list --id \$familyPrefix[^\n]*--exact/);
+      expect(family).toContain("'\\.[^\\s.]+$'");
+      expect(family).toContain("$memberBefore = Get-PatchPilotInstalledVersion -Winget $winget -PackageId $member");
+      expect(family).toContain("& $winget upgrade --id $member --exact");
+      expect(family).toContain("$memberAfter = Get-PatchPilotInstalledVersion -Winget $winget -PackageId $member");
+    });
+
+    it("calls an unchanged family not-winget-managed, never compliant", () => {
+      // An up-to-date x86 runtime says nothing about a bundled x64 one beside it
+      // (a pilot device: x64 ASP.NET Core 8/9 bundled by the Visual Studio .NET SDK).
+      const tail = family.slice(family.indexOf("if ($changed.Count -gt 0) {"));
+      expect(tail).toContain("Complete-PatchPilotRun -Code 0");
+      expect(tail).toContain(`Complete-PatchPilotRun -Code ${WINGET_EXIT_NOT_WINGET_MANAGED}`);
+      expect(tail).toContain("most likely a copy bundled with another product");
+      expect(tail).not.toContain("Complete-PatchPilotRun -Code 5");
+      expect(tail).not.toContain("Complete-PatchPilotRun -Code 6");
+    });
+
+    it("says the copy is not winget-managed when no family member is installed", () => {
+      const none = family.slice(family.indexOf("if ($members.Count -eq 0) {"), family.indexOf("is not managed by winget"));
+      expect(none).toContain(`Complete-PatchPilotRun -Code ${WINGET_EXIT_NOT_WINGET_MANAGED} -Message`);
+      expect(family).toContain("is not managed by winget");
+    });
+
+    it("documents the not-winget-managed code in the script header", () => {
+      expect(WINGET_EXIT_NOT_WINGET_MANAGED).toBe(9);
+      expect(script).toContain("#   9 upgrade: the package (and its version-line/edition family) is not managed by");
+    });
+  });
+
+  describe("install-technology mismatch", () => {
+    // Proven live: a pilot device's MSI PowerShell 7.6.6 vs winget's newer release, exit -1978335090.
+    const mismatchAt = upgradeBlock.indexOf("if ($wingetExit -eq -1978335090) {");
+
+    it("reports a needs-attention verdict instead of winget's raw exit code", () => {
+      expect(WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH).toBe(10);
+      expect(mismatchAt).toBeGreaterThan(0);
+      const block = upgradeBlock.slice(mismatchAt, upgradeBlock.indexOf("if ($wingetExit -eq $wingetUpdateNotApplicable) {", mismatchAt));
+      expect(block).toContain(`Complete-PatchPilotRun -Code ${WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH} -Message`);
+      expect(block).toContain("different installer type");
+    });
+
+    it("checks it only after a real version change has already been reported as success", () => {
+      expect(mismatchAt).toBeGreaterThan(upgradeBlock.indexOf("if ($after -and $after -ne $before) {"));
+      expect(mismatchAt).toBeLessThan(upgradeBlock.indexOf("if ($wingetExit -ne 0) {", mismatchAt) + 1);
+    });
+
+    it("never uninstalls to work around it", () => {
+      const block = upgradeBlock.slice(mismatchAt, upgradeBlock.indexOf("if ($wingetExit -eq $wingetUpdateNotApplicable) {", mismatchAt));
+      expect(block).not.toContain("& $winget uninstall");
+    });
+
+    it("is handled in the per-user child script too", () => {
+      expect(script).toContain(
+        `} elseif ($wingetExit -eq -1978335090) {
+    Write-PatchPilotChildResult -Code ${WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH}`,
+      );
+    });
+
+    it("documents the code in the script header", () => {
+      expect(script).toContain("#   10 upgrade: winget has a newer version, but its installer type differs");
+    });
   });
 });
 

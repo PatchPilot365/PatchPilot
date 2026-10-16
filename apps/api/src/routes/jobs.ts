@@ -20,6 +20,7 @@ import {
   PackageSource,
   detectInstallScope,
   resolveDisplaySoftwareName,
+  bundledComponent,
   isOsFinding,
   isWin32Source,
   type PreflightInput,
@@ -459,8 +460,14 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
         ? (resolveAltSources(chocolateyMatcher, vuln.tenantId, vuln.software)[0] ?? null)
         : null;
     const effectiveSource: PackageSource | null = parsedSource ?? autoAlt?.source ?? null;
-    const override = packageId?.trim() || null;
-    const effectiveWingetId = !effectiveSource && override ? override : (match?.packageId ?? null);
+    // A component bundled inside another product (WSL's msrdc.exe) is fixed by
+    // updating that product. The dialog pre-fills the title's own match, so
+    // that pick doesn't count as an override; a different pick still wins.
+    const bundled = bundledComponent(vuln.software, diskPaths);
+    const pickedId = packageId?.trim() || null;
+    const override = bundled && pickedId === match?.packageId ? null : pickedId;
+    const effectiveWingetId =
+      !effectiveSource && override ? override : (bundled?.packageId ?? match?.packageId ?? null);
     const altPackageId = effectiveSource
       ? (override ??
         resolveAltSource(chocolateyMatcher, vuln.tenantId, vuln.software, effectiveSource)?.packageId ??
@@ -492,7 +499,7 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
         title: vuln.title,
         software: vuln.software,
         severity: vuln.severity,
-        wingetRemediable: Boolean(match),
+        wingetRemediable: Boolean(match || bundled),
         wingetPackageId: effectiveWingetId,
       },
       device: toPreflightDevice(device, await loadExcludedDeviceIndex(tenant.tenantId)),
@@ -574,7 +581,10 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
       engineer,
       script,
       scheduleAt,
-      packageId: !effectiveSource && override ? override : null,
+      // Persist the matched package, not just an override: a CVE can be
+      // shared by several products (Visual Studio + ASP.NET Core), so the
+      // worker's CVE-only fallback lookup could pick the wrong one.
+      packageId: effectiveSource ? null : effectiveWingetId,
       installScope,
       action: remediationAction,
       // A script-sourced win32-app deploy tags the job with `source: "script"`
@@ -855,8 +865,12 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
         // over-reports "out of winget scope" as the catalog/overrides evolve —
         // recompute live against the current catalog rather than trust it.
         const match = matcher(representative.tenantId, representative.software);
+        // Same bundled-component rule as Run Now: the modal pre-fills the
+        // title's own match, which doesn't count as an engineer override.
+        const bundled = bundledComponent(representative.software, groupDiskPaths);
+        const pickedId = bundled && item.packageId === match?.packageId ? null : item.packageId;
         const effectiveWingetId = !effectiveSource
-          ? (item.packageId ?? match?.packageId ?? null)
+          ? (pickedId ?? bundled?.packageId ?? match?.packageId ?? null)
           : null;
         const altPackageId = effectiveSource
           ? (item.packageId ??
@@ -889,7 +903,7 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
             title: representative.title,
             software: representative.software,
             severity: representative.severity,
-            wingetRemediable: Boolean(match),
+            wingetRemediable: Boolean(match || bundled),
             wingetPackageId: effectiveWingetId,
           },
           device: toPreflightDevice(device, excludedIndex),

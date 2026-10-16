@@ -8,6 +8,8 @@ import {
   isOsFinding,
   requiresManualRemediation,
   SEVERITY_ORDER as SEVERITY_ORDER_SHARED,
+  versionLineFamilyName,
+  wingetVersionFamily,
 } from "@patchpilot/shared";
 import type { Severity, Vulnerability } from "../lib/api";
 import { SEVERITY_TOKENS } from "../lib/palette";
@@ -644,7 +646,9 @@ export function CveDetailBody({
           Affected software
         </h4>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-          <div className="font-medium text-slate-800 dark:text-slate-100">{vuln.displayName ?? vuln.software}</div>
+          <div className="font-medium text-slate-800 dark:text-slate-100">
+            {versionLineFamilyName(vuln.displayName ?? vuln.software, vuln.wingetPackageId)}
+          </div>
           {vuln.publisher && (
             <div className="text-sm text-slate-500 dark:text-slate-400">{vuln.publisher}</div>
           )}
@@ -656,7 +660,9 @@ export function CveDetailBody({
                 {vuln.affectedDeviceCount}
               </dd>
             </div>
-            {latestVersion && (
+            {/* A version-line package's latest (e.g. 10.0.x) isn't the target for a
+                device on another line — each job retargets to the device's own line. */}
+            {latestVersion && !(vuln.wingetPackageId && wingetVersionFamily(vuln.wingetPackageId)) && (
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500 dark:text-slate-400">Latest version</dt>
                 <dd className="font-medium text-slate-800 dark:text-slate-100">{latestVersion}</dd>

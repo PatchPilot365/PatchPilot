@@ -117,6 +117,17 @@ describe("isOsFinding", () => {
     expect(isOsFinding("Microsoft Defender Security Intelligence Updates")).toBe(true);
   });
 
+  it("classifies .NET Framework (serviced by Windows Update) as an OS finding", () => {
+    expect(isOsFinding("Microsoft .Net Framework")).toBe(true);
+    expect(isOsFinding(".net framework")).toBe(true);
+    expect(isOsFinding("Microsoft .NET Framework Runtime 4.8.1")).toBe(true);
+    expect(isOsFinding("Microsoft .NET Framework 4.8.1 Developer Pack")).toBe(false);
+    expect(isOsFinding("Microsoft .NET Framework Repair Tool")).toBe(false);
+    // Modern .NET installs side by side and is winget-serviced.
+    expect(isOsFinding("Microsoft .Net")).toBe(false);
+    expect(isOsFinding("Microsoft ASP.NET Core Runtime 10.0")).toBe(false);
+  });
+
   it("treats unrelated application titles as non-OS findings", () => {
     expect(isOsFinding("Google Chrome")).toBe(false);
     expect(isOsFinding("Zoom Meetings")).toBe(false);

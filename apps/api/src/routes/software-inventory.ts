@@ -27,6 +27,7 @@ import {
   isOsFinding,
   alignVersionDisplay,
   compareWingetVersions,
+  selectWingetFamilyMember,
   normalizeTitle,
   type PreflightInput,
   type InstallScope,
@@ -36,6 +37,7 @@ import { config } from "../config.js";
 import {
   buildWingetMatcher,
   buildChocolateyMatcher,
+  isBundledLibrary,
   loadWingetCatalog,
   loadChocolateyCatalog,
   resolveAltSources,
@@ -74,6 +76,39 @@ import type { Win32Source } from "@patchpilot/shared";
 const REMEDIATION_ACTIONS = new Set<RemediationAction>(["upgrade", "uninstall"]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The title match for a version-line family (`Microsoft.DotNet.Runtime.10`)
+ * narrowed to the line this device actually has installed — .NET 9.0.21 maps
+ * to `Microsoft.DotNet.Runtime.9`, not 10. Majors install side by side, so
+ * the newest line's version is the wrong "latest" and Fix Now would add a new
+ * runtime instead of patching the installed one. See selectWingetFamilyMember.
+ */
+function versionLinePackage(
+  packageId: string | undefined,
+  catalogIds: readonly string[],
+  installedVersion: string | null | undefined,
+): string | null {
+  if (!packageId) return null;
+  return selectWingetFamilyMember(packageId, catalogIds, installedVersion) ?? packageId;
+}
+
+const catalogIdsCache = new WeakMap<readonly { packageId: string }[], string[]>();
+
+/** {@link versionLinePackage} for a Fix Now / preflight / Fix All title match, against the cached catalog. */
+async function versionLineMatch(
+  match: { packageId: string } | null,
+  installedVersion: string | null | undefined,
+): Promise<string | null> {
+  if (!match) return null;
+  const catalog = await loadWingetCatalog();
+  let ids = catalogIdsCache.get(catalog);
+  if (!ids) {
+    ids = catalog.map((c) => c.packageId);
+    catalogIdsCache.set(catalog, ids);
+  }
+  return versionLinePackage(match.packageId, ids, installedVersion);
+}
 
 interface FixNowBody {
   tenantId?: string;
@@ -133,9 +168,15 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
   async function loadDevices(): Promise<DeviceRow[]> {
     return config.DEMO_MODE ? demoDevices : db.select().from(tables.devices);
   }
+  // Bundled libraries (XZ Utils's liblzma.dll, vendored inside OneDrive,
+  // Wireshark, Power BI, ...) are a file inside other apps, not software anyone
+  // installed — hidden from the inventory as well as never matched to a package.
+  // Updating the host app is what replaces them.
   async function loadInventory(tenantId: string): Promise<SoftwareInventoryRow[]> {
-    if (config.DEMO_MODE) return demoSoftwareInventory.filter((s) => s.tenantId === tenantId);
-    return db.select().from(tables.softwareInventory).where(eq(tables.softwareInventory.tenantId, tenantId));
+    const rows = config.DEMO_MODE
+      ? demoSoftwareInventory.filter((s) => s.tenantId === tenantId)
+      : await db.select().from(tables.softwareInventory).where(eq(tables.softwareInventory.tenantId, tenantId));
+    return rows.filter((r) => !isBundledLibrary(r.name));
   }
   async function loadDeviceSoftware(tenantId: string, softwareId: string): Promise<DeviceSoftwareRow[]> {
     if (config.DEMO_MODE) {
@@ -150,20 +191,18 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
     tenantId: string,
     defenderMachineId: string,
   ): Promise<DeviceSoftwareRow[]> {
-    if (config.DEMO_MODE) {
-      return demoDeviceSoftware.filter(
-        (d) => d.tenantId === tenantId && d.defenderMachineId === defenderMachineId,
-      );
-    }
-    return db
-      .select()
-      .from(tables.deviceSoftware)
-      .where(
-        and(
-          eq(tables.deviceSoftware.tenantId, tenantId),
-          eq(tables.deviceSoftware.defenderMachineId, defenderMachineId),
-        ),
-      );
+    const rows = config.DEMO_MODE
+      ? demoDeviceSoftware.filter((d) => d.tenantId === tenantId && d.defenderMachineId === defenderMachineId)
+      : await db
+          .select()
+          .from(tables.deviceSoftware)
+          .where(
+            and(
+              eq(tables.deviceSoftware.tenantId, tenantId),
+              eq(tables.deviceSoftware.defenderMachineId, defenderMachineId),
+            ),
+          );
+    return rows.filter((r) => !isBundledLibrary(r.name));
   }
 
   /**
@@ -337,6 +376,8 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
       const wingetLatestById = new Map(wingetCatalog.map((c) => [c.packageId, c.latestVersion]));
       const chocolateyLatestById = new Map(chocolateyCatalog.map((c) => [c.packageId, c.latestVersion]));
 
+      const wingetIds = wingetCatalog.map((c) => c.packageId);
+
       const deviceByMachineId = new Map(devices.filter((d) => d.defenderMachineId).map((d) => [d.defenderMachineId as string, d]));
 
       const items = rows.map((row) => {
@@ -344,8 +385,9 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
         const installScope: InstallScope = detectInstallScope(row.diskPaths, row.registryPaths);
         const wingetMatch = wingetMatcher(tenantId, row.name);
         const chocolateyMatch = chocolateyMatcher(tenantId, row.name);
-        const rawLatestVersion = wingetMatch
-          ? (wingetLatestById.get(wingetMatch.packageId) ?? null)
+        const wingetPackageId = versionLinePackage(wingetMatch?.packageId, wingetIds, row.version);
+        const rawLatestVersion = wingetPackageId
+          ? (wingetLatestById.get(wingetPackageId) ?? null)
           : chocolateyMatch
             ? (chocolateyLatestById.get(chocolateyMatch.packageId) ?? null)
             : null;
@@ -364,7 +406,8 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
           installScope,
           latestVersion,
           upToDate,
-          wingetPackageId: wingetMatch?.packageId ?? null,
+          windowsUpdate: isOsFinding(row.name),
+          wingetPackageId,
           chocolateyPackageId: chocolateyMatch?.packageId ?? null,
           fixable: Boolean(wingetMatch || chocolateyMatch),
           diskPaths: row.diskPaths ?? [],
@@ -411,14 +454,16 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
     const inventoryBySoftwareId = new Map(inventory.map((s) => [s.softwareId, s]));
     const wingetLatestById = new Map(wingetCatalog.map((c) => [c.packageId, c.latestVersion]));
     const chocolateyLatestById = new Map(chocolateyCatalog.map((c) => [c.packageId, c.latestVersion]));
+    const wingetIds = wingetCatalog.map((c) => c.packageId);
 
     const items = rows.map((row) => {
       const summary = inventoryBySoftwareId.get(row.softwareId) ?? null;
       const installScope: InstallScope = detectInstallScope(row.diskPaths, row.registryPaths);
       const wingetMatch = wingetMatcher(device.tenantId, row.name);
       const chocolateyMatch = chocolateyMatcher(device.tenantId, row.name);
-      const rawLatestVersion = wingetMatch
-        ? (wingetLatestById.get(wingetMatch.packageId) ?? null)
+      const wingetPackageId = versionLinePackage(wingetMatch?.packageId, wingetIds, row.version);
+      const rawLatestVersion = wingetPackageId
+        ? (wingetLatestById.get(wingetPackageId) ?? null)
         : chocolateyMatch
           ? (chocolateyLatestById.get(chocolateyMatch.packageId) ?? null)
           : null;
@@ -447,8 +492,9 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
         publicExploit: summary?.publicExploit ?? false,
         latestVersion,
         upToDate,
+        windowsUpdate: isOsFinding(row.name),
         packageSource,
-        wingetPackageId: wingetMatch?.packageId ?? null,
+        wingetPackageId,
         chocolateyPackageId: chocolateyMatch?.packageId ?? null,
         diskPaths: row.diskPaths ?? [],
         registryPaths: row.registryPaths ?? [],
@@ -584,7 +630,7 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
         : null;
     const effectiveSource: PackageSource | null = parsedSource ?? autoAlt?.source ?? null;
     const override = packageId?.trim() || null;
-    const effectiveWingetId = !effectiveSource && override ? override : (match?.packageId ?? null);
+    const effectiveWingetId = !effectiveSource && override ? override : await versionLineMatch(match, softwareRow.version);
     const altPackageId = effectiveSource
       ? (override ??
         resolveAltSource(chocolateyMatcher, tenant.tenantId, softwareRow.name, effectiveSource)
@@ -891,7 +937,7 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
         : null;
     const effectiveSource: PackageSource | null = parsedSource ?? autoAlt?.source ?? null;
     const override = packageId?.trim() || null;
-    const effectiveWingetId = !effectiveSource && override ? override : (match?.packageId ?? null);
+    const effectiveWingetId = !effectiveSource && override ? override : await versionLineMatch(match, softwareRow.version);
     const altPackageId = effectiveSource
       ? (override ??
         resolveAltSource(chocolateyMatcher, tenant.tenantId, softwareRow.name, effectiveSource)
@@ -1103,7 +1149,7 @@ export async function softwareInventoryRoutes(app: FastifyInstance): Promise<voi
           : null;
       const effectiveSource: PackageSource | null = autoAlt?.source ?? null;
       const effectiveWingetId = !effectiveSource
-        ? (override ?? match?.packageId ?? null)
+        ? (override ?? (await versionLineMatch(match, softwareRow.version)))
         : null;
       const altPackageId = effectiveSource
         ? (resolveAltSource(chocolateyMatcher, tenant.tenantId, softwareRow.name, effectiveSource)

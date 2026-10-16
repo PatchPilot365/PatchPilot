@@ -11,8 +11,79 @@ import {
   alignVersionDisplay,
   resolveDisplaySoftwareName,
   detectMicrosoftStoreInstall,
+  wingetVersionFamily,
+  selectWingetFamilyMember,
+  versionLineFamilyName,
+  pickJobFinding,
+  bundledComponent,
   type WingetCatalogEntry,
 } from "./winget.js";
+
+describe("wingetVersionFamily", () => {
+  it("splits off the trailing version-line segments", () => {
+    expect(wingetVersionFamily("Microsoft.DotNet.AspNetCore.10")).toEqual({
+      family: "Microsoft.DotNet.AspNetCore",
+      stem: "10",
+    });
+    expect(wingetVersionFamily("Microsoft.DotNet.AspNetCore.3_1")?.stem).toBe("3.1");
+    expect(wingetVersionFamily("Python.Python.3.12")).toEqual({ family: "Python.Python", stem: "3.12" });
+  });
+
+  it("is null for ids that don't pin a version line", () => {
+    expect(wingetVersionFamily("Google.Chrome")).toBeNull();
+    expect(wingetVersionFamily("Microsoft.DotNet.AspNetCore.Preview")).toBeNull();
+    expect(wingetVersionFamily("Microsoft.VisualStudio.2022.Community")).toBeNull();
+  });
+});
+
+describe("selectWingetFamilyMember", () => {
+  const aspNet = [
+    "Microsoft.DotNet.AspNetCore.10",
+    "Microsoft.DotNet.AspNetCore.2_2",
+    "Microsoft.DotNet.AspNetCore.2_2_402",
+    "Microsoft.DotNet.AspNetCore.3_1",
+    "Microsoft.DotNet.AspNetCore.8",
+    "Microsoft.DotNet.AspNetCore.9",
+    "Microsoft.DotNet.AspNetCore.Preview",
+    "Microsoft.DotNet.SDK.8",
+  ];
+
+  it("sends a device to the runtime line it actually has", () => {
+    // Live: a device on 8.0.31 was sent AspNetCore.10 and failed with 0x8A150014.
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, "8.0.31.0")).toBe(
+      "Microsoft.DotNet.AspNetCore.8",
+    );
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, "3.1.16.0")).toBe(
+      "Microsoft.DotNet.AspNetCore.3_1",
+    );
+  });
+
+  it("does not confuse 1.x with 10.x", () => {
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.8", aspNet, "10.0.11.0")).toBe(
+      "Microsoft.DotNet.AspNetCore.10",
+    );
+  });
+
+  it("prefers the most specific line", () => {
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, "2.2.402")).toBe(
+      "Microsoft.DotNet.AspNetCore.2_2_402",
+    );
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, "2.2.207")).toBe(
+      "Microsoft.DotNet.AspNetCore.2_2",
+    );
+  });
+
+  it("keeps the given id when it is already right, or nothing fits", () => {
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, "10.0.11.0")).toBeNull();
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, "7.0.20")).toBeNull();
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", aspNet, null)).toBeNull();
+    expect(selectWingetFamilyMember("Google.Chrome", ["Google.Chrome.EXE"], "120.0")).toBeNull();
+  });
+
+  it("never crosses into another family", () => {
+    expect(selectWingetFamilyMember("Microsoft.DotNet.AspNetCore.10", ["Microsoft.DotNet.SDK.8"], "8.0.31")).toBeNull();
+  });
+});
 
 const catalog: WingetCatalogEntry[] = [
   { packageId: "Mozilla.Firefox", name: "Mozilla Firefox", publisher: "Mozilla", softwareTitle: "Mozilla Firefox" },
@@ -275,6 +346,27 @@ describe("matchWinget", () => {
     const m = matchWinget("Google Chrome for Business", catalog);
     expect(m?.packageId).toBe("Google.Chrome");
     expect(m?.method).toBe("contains");
+  });
+
+  it("matches Defender's edition-less Visual Studio title to the IDE, not a sibling that contains it", () => {
+    // Live: "visual_studio_2022" contain-matched Remote Tools (whose older latest
+    // version then made a behind IDE look current), "Microsoft Visual Studio 2022"
+    // overlap-matched VS Code, and "visual_studio_2019" landed on BuildTools.
+    const vsCatalog: WingetCatalogEntry[] = [
+      { packageId: "Microsoft.VisualStudio.2022.RemoteTools", name: "Remote Tools for Visual Studio 2022", publisher: "Microsoft" },
+      { packageId: "Microsoft.VisualStudio.2022.BuildTools", name: "Visual Studio BuildTools 2022", publisher: "Microsoft" },
+      { packageId: "Microsoft.VisualStudio.2022.Community", name: "Visual Studio Community 2022", publisher: "Microsoft" },
+      { packageId: "Microsoft.VisualStudio.2022.Professional", name: "Visual Studio Professional 2022", publisher: "Microsoft" },
+      { packageId: "Microsoft.VisualStudio.2019.BuildTools", name: "Visual Studio BuildTools 2019", publisher: "Microsoft" },
+      { packageId: "Microsoft.VisualStudio.2019.Community", name: "Microsoft Visual Studio Community 2019", publisher: "Microsoft" },
+      { packageId: "Microsoft.VisualStudioCode", name: "Microsoft Visual Studio Code", publisher: "Microsoft" },
+    ];
+    expect(matchWinget("visual_studio_2022", vsCatalog)?.packageId).toBe("Microsoft.VisualStudio.2022.Community");
+    expect(matchWinget("Microsoft Visual Studio 2022", vsCatalog)?.packageId).toBe("Microsoft.VisualStudio.2022.Community");
+    expect(matchWinget("visual_studio_2019", vsCatalog)?.packageId).toBe("Microsoft.VisualStudio.2019.Community");
+    // Products Defender names explicitly are untouched.
+    expect(matchWinget("remote_tools_for_visual_studio_2022", vsCatalog)?.packageId).toBe("Microsoft.VisualStudio.2022.RemoteTools");
+    expect(matchWinget("visual_studio_code", vsCatalog)?.packageId).toBe("Microsoft.VisualStudioCode");
   });
 
   it("returns null when nothing clears the threshold", () => {
@@ -593,5 +685,75 @@ describe("resolveDisplaySoftwareName", () => {
     expect(resolveDisplaySoftwareName("Ability Office 8 Professional")).toBe(
       "Ability Office 8 Professional",
     );
+  });
+});
+
+describe("versionLineFamilyName", () => {
+  it("drops the version line the package id already encodes", () => {
+    expect(
+      versionLineFamilyName("Microsoft ASP.NET Core Runtime 10.0", "Microsoft.DotNet.AspNetCore.10"),
+    ).toBe("Microsoft ASP.NET Core Runtime");
+    expect(
+      versionLineFamilyName("Microsoft .NET Runtime 8", "Microsoft.DotNet.Runtime.8"),
+    ).toBe("Microsoft .NET Runtime");
+  });
+
+  it("keeps names whose trailing version is a different line", () => {
+    expect(
+      versionLineFamilyName("Microsoft ASP.NET Core Runtime 9.0", "Microsoft.DotNet.AspNetCore.10"),
+    ).toBe("Microsoft ASP.NET Core Runtime 9.0");
+    expect(versionLineFamilyName("Product 100", "Vendor.Product.10")).toBe("Product 100");
+  });
+
+  it("leaves names alone without a version-line package", () => {
+    expect(versionLineFamilyName("Microsoft ASP.NET Core Runtime 10.0", null)).toBe(
+      "Microsoft ASP.NET Core Runtime 10.0",
+    );
+    expect(versionLineFamilyName("Notepad++ 8", "Notepad++.Notepad++")).toBe("Notepad++ 8");
+    expect(versionLineFamilyName("Google Chrome", "Google.Chrome")).toBe("Google Chrome");
+  });
+});
+
+describe("pickJobFinding", () => {
+  // CVE-2026-88092 is listed against both products.
+  const aspnet = { software: "Microsoft ASP.NET Core Runtime 10.0", wingetPackageId: "Microsoft.DotNet.AspNetCore.10" };
+  const vs = { software: "Visual Studio Community 2022", wingetPackageId: "Microsoft.VisualStudio.2022.Community" };
+  const rows = [aspnet, vs];
+
+  it("picks the row for the job's package, including another version line", () => {
+    expect(pickJobFinding(rows, "Microsoft.VisualStudio.2022.Community", null)).toBe(vs);
+    expect(pickJobFinding(rows, "Microsoft.DotNet.AspNetCore.9", null)).toBe(aspnet);
+  });
+
+  it("falls back to the job's software name", () => {
+    expect(pickJobFinding(rows, null, "visual studio community 2022")).toBe(vs);
+    expect(pickJobFinding(rows, "Some.Override", "Visual Studio Community 2022")).toBe(vs);
+  });
+
+  it("refuses to guess between products", () => {
+    expect(pickJobFinding(rows, null, null)).toBeNull();
+    expect(pickJobFinding(rows, null, "Something Else")).toBeNull();
+  });
+
+  it("resolves a single-product CVE without a name", () => {
+    expect(pickJobFinding([aspnet, { ...aspnet }], null, null)).toBe(aspnet);
+    expect(pickJobFinding([], null, null)).toBeNull();
+  });
+});
+
+describe("bundledComponent", () => {
+  it("routes WSL's bundled Remote Desktop client to a WSL update", () => {
+    expect(bundledComponent("Remote Desktop", ["C:\\Program Files\\WSL\\msrdc.exe"])).toEqual({
+      label: "Remote Desktop (bundled with WSL)",
+      packageId: "Microsoft.WSL",
+    });
+  });
+
+  it("leaves the standalone Remote Desktop client and other titles alone", () => {
+    expect(
+      bundledComponent("Remote Desktop", ["C:\\Program Files\\Remote Desktop\\msrdc.exe"]),
+    ).toBeNull();
+    expect(bundledComponent("Remote Desktop", null)).toBeNull();
+    expect(bundledComponent("Remote Desktop Manager", ["C:\\Program Files\\WSL\\msrdc.exe"])).toBeNull();
   });
 });

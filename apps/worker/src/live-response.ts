@@ -529,14 +529,15 @@ interface DispatchOptions {
  * Best-effort: a failed cancel is logged, not thrown. The job this action
  * belonged to is already being reported as failed either way, and there is no
  * better fallback here than telling the engineer the device still needs a
- * manual look.
+ * manual look. Returns whether Defender accepted the cancel, so a caller that
+ * cleared a blocking action knows it is worth retrying its own request.
  */
 async function cancelMachineAction(
   target: GraphTarget,
   actionId: string,
   progress: ProgressLog,
   comment = "PatchPilot: cancelled after giving up on confirmation (device did not check in within the poll window).",
-): Promise<void> {
+): Promise<boolean> {
   const { engineer, homeTenantId, tenantId } = target;
   try {
     const cancelled = await graphWrite({
@@ -550,6 +551,7 @@ async function cancelMachineAction(
     });
     if (cancelled.ok) {
       await progress.log(`Action ${actionId} cancelled — the device's Live Response slot has been released.`);
+      return true;
     } else {
       await progress.log(
         `Could not cancel action ${actionId} (HTTP ${cancelled.status}) — it may already be past a cancellable ` +
@@ -557,14 +559,21 @@ async function cancelMachineAction(
           `Defender portal's Action center.`,
       );
     }
+    return false;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await progress.log(
       `Could not cancel action ${actionId} (${message}). If new jobs for this device keep failing with ` +
         `"already running", cancel it manually in the Defender portal's Action center.`,
     );
+    return false;
   }
 }
+
+/** How long to wait after cancelling a blocking action before asking Defender
+ *  again — the cancel is accepted immediately, but the device's session slot
+ *  is not always released by the time the next request lands. */
+const STALE_CANCEL_SETTLE_MS = 10_000;
 
 /** Matches the action id Defender embeds in an ActiveRequestAlreadyExists
  *  error message, e.g. "Action is already in progress, active action id:
@@ -602,18 +611,20 @@ async function dispatchLibraryScript(
   await progress.log(startingLog);
   const params = [{ key: "ScriptName", value: scriptName }];
   if (args !== undefined) params.push({ key: "Args", value: args });
-  const started = await graphWrite<MachineAction>({
-    engineer,
-    homeTenantId,
-    tenantId,
-    host: "defender",
-    method: "POST",
-    path: `/machines/${machineId}/runliveresponse`,
-    body: {
-      Comment: comment,
-      Commands: [{ type: "RunScript", params }],
-    },
-  });
+  const startAction = () =>
+    graphWrite<MachineAction>({
+      engineer,
+      homeTenantId,
+      tenantId,
+      host: "defender",
+      method: "POST",
+      path: `/machines/${machineId}/runliveresponse`,
+      body: {
+        Comment: comment,
+        Commands: [{ type: "RunScript", params }],
+      },
+    });
+  let started = await startAction();
   if (!started.ok || !started.data?.id) {
     // Defender's actual reason (e.g. "ActiveRequestAlreadyExists" for HTTP 400
     // when a stale/duplicate session is already open, vs. a real 5xx outage) —
@@ -643,15 +654,35 @@ async function dispatchLibraryScript(
       await progress.log(
         `Clearing blocking action ${staleActionId} so the next job for this device isn't stuck behind it...`,
       );
-      await cancelMachineAction(
+      const cleared = await cancelMachineAction(
         target,
         staleActionId,
         progress,
         "PatchPilot: cancelled a stale action reported by Defender as blocking a new Live Response request " +
           "(ActiveRequestAlreadyExists) for this device.",
       );
+      // Retry once: clearing the blocker without retrying failed this job for
+      // nothing — confirmed live on a pilot device, where a scheduled 7-Zip job
+      // cleared an orphaned action and still reported failed.
+      if (cleared) {
+        await sleepUnlessAborted(STALE_CANCEL_SETTLE_MS, signal);
+        if (signal?.aborted) {
+          await progress.log("Job time limit reached before the retry — nothing was dispatched to the device.");
+          return { exitCode: 1, output: progress.text };
+        }
+        await progress.log("Retrying the action now that the device's Live Response slot is free...");
+        started = await startAction();
+        if (!started.ok || !started.data?.id) {
+          await progress.log(
+            started.errorBody
+              ? `Retry failed to start action (HTTP ${started.status}): ${started.errorBody}`
+              : `Retry failed to start action (HTTP ${started.status}).`,
+          );
+          return { exitCode: 1, output: progress.text };
+        }
+      }
     }
-    return { exitCode: 1, output: progress.text };
+    if (!started.ok || !started.data?.id) return { exitCode: 1, output: progress.text };
   }
 
   // Poll the machine action to a terminal state.
@@ -684,14 +715,26 @@ async function dispatchLibraryScript(
     }
     await sleepUnlessAborted(POLL_INTERVAL_MS, signal);
     if (signal?.aborted) continue;
-    const polled = await graphGet<MachineAction>({
-      engineer,
-      homeTenantId,
-      tenantId,
-      host: "defender",
-      path: `/machineactions/${actionId}`,
-    });
-    if (polled.ok && polled.data?.status) status = polled.data.status;
+    // A transient network error ("fetch failed") must not escape: it used to
+    // abort the whole dispatch with the action still Pending/InProgress on
+    // Defender, holding the device's Live Response slot and failing the next
+    // job with ActiveRequestAlreadyExists. Treat it as "no change" and keep
+    // polling — the deadline and abort checks above still bound the loop and
+    // cancel the action if it never resolves.
+    try {
+      const polled = await graphGet<MachineAction>({
+        engineer,
+        homeTenantId,
+        tenantId,
+        host: "defender",
+        path: `/machineactions/${actionId}`,
+      });
+      if (polled.ok && polled.data?.status) status = polled.data.status;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await progress.log(`Could not check action ${actionId} (${message}) — will try again.`);
+      continue;
+    }
     // Log on every status change, plus a periodic heartbeat so "still Pending"
     // reads as "still polling, nothing has changed" rather than a dead worker.
     const elapsedS = Math.round((POLL_TIMEOUT_MS - (deadline - Date.now())) / 1000);

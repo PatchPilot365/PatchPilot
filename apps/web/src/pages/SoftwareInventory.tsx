@@ -19,6 +19,7 @@ import {
   ResponsiveTable,
   ScopeChip,
   SlideOver,
+  WINDOWS_UPDATE_REASON,
   type ResponsiveTableColumn,
 } from "../components/ui";
 import { RunNowModal } from "../components/RunNowModal";
@@ -433,10 +434,12 @@ export function SoftwareInventory() {
               <button
                 type="button"
                 onClick={() => setFixAllOpen(true)}
-                disabled={!devicesResult.devices.some((d) => d.deviceId && !d.upToDate)}
+                disabled={!devicesResult.devices.some((d) => d.deviceId && !d.upToDate && !d.windowsUpdate)}
                 title={
-                  devicesResult.devices.some((d) => d.deviceId && !d.upToDate)
+                  devicesResult.devices.some((d) => d.deviceId && !d.upToDate && !d.windowsUpdate)
                     ? undefined
+                    : devicesResult.devices.some((d) => d.windowsUpdate)
+                      ? WINDOWS_UPDATE_REASON
                     : devicesResult.devices.some((d) => d.deviceId)
                       ? "All devices are already up to date."
                       : "No devices are enrolled for remediation."
@@ -453,7 +456,7 @@ export function SoftwareInventory() {
                 // winget/chocolatey entry. Still requires an Intune-enrolled
                 // device to dispatch against.
                 const hasDevice = !!d.deviceId;
-                const canFix = hasDevice && !d.upToDate;
+                const canFix = hasDevice && !d.upToDate && !d.windowsUpdate;
                 const hasEvidence = d.diskPaths.length > 0 || d.registryPaths.length > 0;
                 const expanded = expandedDevice === d.defenderMachineId;
                 return (
@@ -477,7 +480,9 @@ export function SoftwareInventory() {
                               />
                             </div>
                           </DetailRow>
-                          <DetailRow label="Latest version">{d.latestVersion ?? "—"}</DetailRow>
+                          <DetailRow label="Latest version">
+                            {d.windowsUpdate ? "Windows Update" : (d.latestVersion ?? "—")}
+                          </DetailRow>
                         </div>
                       </div>
                       <button
@@ -485,7 +490,9 @@ export function SoftwareInventory() {
                         onClick={() => setFixTarget(d)}
                         disabled={!canFix}
                         title={
-                          !hasDevice
+                          d.windowsUpdate
+                            ? WINDOWS_UPDATE_REASON
+                            : !hasDevice
                             ? "Device not enrolled for remediation."
                             : d.upToDate
                               ? "Already up to date."

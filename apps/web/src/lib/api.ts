@@ -1026,6 +1026,8 @@ export interface SoftwareInventoryDevice {
   latestVersion: string | null;
   /** True when detectedVersion already meets or exceeds latestVersion — nothing to fix. */
   upToDate: boolean;
+  /** OS component (incl. .NET Framework) serviced by Windows Update — no app-channel Fix Now. */
+  windowsUpdate: boolean;
   wingetPackageId: string | null;
   chocolateyPackageId: string | null;
   fixable: boolean;
@@ -1057,6 +1059,8 @@ export interface DeviceSoftwareInventoryRow {
   latestVersion: string | null;
   /** True when version already meets or exceeds latestVersion — nothing to fix. */
   upToDate: boolean;
+  /** OS component (incl. .NET Framework) serviced by Windows Update — no app-channel Fix Now. */
+  windowsUpdate: boolean;
   packageSource: "winget" | "chocolatey" | null;
   wingetPackageId: string | null;
   chocolateyPackageId: string | null;

@@ -12,12 +12,16 @@ export function WizardShell({
   title,
   subtitle,
   children,
+  wide = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
   subtitle?: ReactNode;
   children: ReactNode;
+  /** Use most of the screen width instead of the 1024px default — for content
+   *  built around wide tables (the Devices page's per-device tabs). */
+  wide?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -37,7 +41,7 @@ export function WizardShell({
         onClick={onClose}
         aria-hidden
       />
-      <div className="relative z-10 flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
+      <div className={`relative z-10 flex h-full w-full ${wide ? "max-w-screen-2xl" : "max-w-5xl"} flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl`}>
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">

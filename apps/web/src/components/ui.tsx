@@ -216,6 +216,10 @@ export function isRemediableType(type: string | null | undefined): boolean {
 export const UNSUPPORTED_REMEDIATION_REASON =
   "Attention required — Defender has no package to update; the owning application has to ship the fix";
 
+/** Fix Now tooltip for inventory rows that are part of Windows (incl. .NET Framework). */
+export const WINDOWS_UPDATE_REASON =
+  "Part of Windows — updated by Windows Update (monthly cumulative update), not by PatchPilot packages.";
+
 // The "due soon" threshold and the three-state bucketing now live in
 // @patchpilot/shared so the server can compute the same Dashboard tile counts
 // the list pages filter by. Re-exported here because ~20 call sites already
