@@ -77,7 +77,7 @@ export const Schedule = z.object({
   name: z.string(),
   cron: z.string(),
   channel: RemediationChannel,
-  target: z.record(z.unknown()).default({}),
+  target: z.record(z.string(), z.unknown()).default({}),
   enabled: z.boolean().default(true),
   createdAt: z.coerce.date(),
 });
