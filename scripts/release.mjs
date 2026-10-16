@@ -131,15 +131,64 @@ function findListenerPid(port) {
   return match ? Number(match[1]) : null;
 }
 
-/** Best-effort: PIDs of any other process belonging to this exact dev
- * supervisor chain (scripts/run-resilient.mjs wrapping `tsx ... index.ts` for
- * apps/api) — not just whichever one currently holds the port — so a stale
- * supervisor doesn't sit there re-fighting for the port after the fresh one
- * comes up. Matched on a command-line substring specific enough that it can't
- * plausibly hit an unrelated process. Silently returns [] if the query fails
- * or nothing matches (this is a cleanup nicety, not load-bearing — the actual
- * port-holder is killed separately, by exact PID, in refreshLocalDevApi). */
-function findDevApiSupervisorPids() {
+const RESILIENT_SUPERVISOR_RE = /run-resilient\.mjs\b.*\bindex\.ts\b/;
+const API_FILTER_RE = /@patchpilot\/api(?![\w-])/;
+
+/**
+ * Pure selection half of findDevApiSupervisorPids, split out for testing.
+ * `processes` is a process-table snapshot of { pid, ppid, commandLine }.
+ *
+ * apps/api and apps/worker run the *identical* `dev:resilient` command line
+ * (`node ../../scripts/run-resilient.mjs pnpm exec tsx src/index.ts`), only
+ * from different directories — and Win32_Process exposes no cwd — so the
+ * command line alone can't tell them apart; matching on it alone used to
+ * kill the dev worker on every release. A supervisor counts as the API's
+ * only if either:
+ *   - an ancestor's command line names the `@patchpilot/api` pnpm filter
+ *     (how start-dev.ps1, .claude/launch.json and refreshLocalDevApi itself
+ *     all launch it), or
+ *   - it is an ancestor of `portPid`, the process holding the API port
+ *     (covers a bare `pnpm dev:resilient` run from inside apps/api).
+ * Anything else — including any supervisor we can't attribute — is left alone.
+ */
+export function selectDevApiSupervisorPids(processes, portPid) {
+  const byPid = new Map(processes.map((p) => [p.pid, p]));
+
+  // pid's parent chain (excluding pid itself), guarded against cycles from
+  // PID reuse in the snapshot.
+  function ancestors(pid) {
+    const chain = [];
+    const seen = new Set([pid]);
+    let cur = byPid.get(pid);
+    while (cur && !seen.has(cur.ppid)) {
+      seen.add(cur.ppid);
+      cur = byPid.get(cur.ppid);
+      if (cur) chain.push(cur);
+    }
+    return chain;
+  }
+
+  const portHolderAncestors = new Set(portPid ? ancestors(portPid).map((p) => p.pid) : []);
+
+  return processes
+    .filter((p) => RESILIENT_SUPERVISOR_RE.test(p.commandLine ?? ""))
+    .filter(
+      (p) =>
+        portHolderAncestors.has(p.pid) ||
+        ancestors(p.pid).some((a) => API_FILTER_RE.test(a.commandLine ?? "")),
+    )
+    .map((p) => p.pid);
+}
+
+/** Best-effort: PIDs of any process belonging to the apps/api dev supervisor
+ * chain (scripts/run-resilient.mjs wrapping `tsx ... index.ts`) — not just
+ * whichever one currently holds the port — so a stale supervisor doesn't sit
+ * there re-fighting for the port after the fresh one comes up. See
+ * selectDevApiSupervisorPids for how the worker's identical chain is excluded.
+ * Silently returns [] if the query fails or nothing matches (this is a cleanup
+ * nicety, not load-bearing — the actual port-holder is killed separately, by
+ * exact PID, in refreshLocalDevApi). */
+function findDevApiSupervisorPids(portPid) {
   try {
     const out = execFileSync(
       "powershell",
@@ -148,15 +197,18 @@ function findDevApiSupervisorPids() {
         "-NonInteractive",
         "-Command",
         "Get-CimInstance Win32_Process | " +
-          "Where-Object { $_.CommandLine -like '*run-resilient.mjs*' -and $_.CommandLine -like '*index.ts*' } | " +
-          "Select-Object -ExpandProperty ProcessId",
+          "Select-Object ProcessId, ParentProcessId, CommandLine | " +
+          "ConvertTo-Json -Compress",
       ],
-      { encoding: "utf8" },
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
     );
-    return out
-      .split(/\r?\n/)
-      .map((l) => Number(l.trim()))
-      .filter((n) => Number.isInteger(n) && n > 0);
+    const parsed = JSON.parse(out);
+    const processes = (Array.isArray(parsed) ? parsed : [parsed]).map((p) => ({
+      pid: p.ProcessId,
+      ppid: p.ParentProcessId,
+      commandLine: p.CommandLine,
+    }));
+    return selectDevApiSupervisorPids(processes, portPid);
   } catch {
     return [];
   }
@@ -218,8 +270,11 @@ async function refreshLocalDevApi(version) {
   }
 
   console.log(`\nRestarting local dev API (:${port}, was pid ${existingPid}) to pick up v${version}...`);
+  // Snapshot the supervisor chain *before* killing the port holder, while it's
+  // still linked into the parent chain portPid matching relies on.
+  const supervisorPids = findDevApiSupervisorPids(existingPid);
   killPid(existingPid);
-  for (const pid of findDevApiSupervisorPids()) {
+  for (const pid of supervisorPids) {
     if (pid !== existingPid) killPid(pid);
   }
 
@@ -393,6 +448,19 @@ async function main() {
         `\nWould then also check for a locally running dev API (port from .env's API_PORT, ` +
           `default 4000) and restart it in place, if one is running, so it reflects v${version}.`,
       );
+      if (process.platform === "win32") {
+        const port = readApiPort();
+        const portPid = findListenerPid(port);
+        if (!portPid) {
+          console.log(`  (Nothing is listening on :${port} right now, so nothing would be restarted.)`);
+        } else {
+          const supervisors = findDevApiSupervisorPids(portPid).filter((pid) => pid !== portPid);
+          console.log(
+            `  Right now that would kill :${port} holder pid ${portPid}` +
+              (supervisors.length ? ` and apps/api supervisor pid(s) ${supervisors.join(", ")}.` : `.`),
+          );
+        }
+      }
     }
     console.log(`\nNo files were changed. Re-run without --dry-run to actually cut the release.`);
     return;
@@ -444,4 +512,8 @@ async function main() {
   }
 }
 
-main();
+// Only run the CLI body when executed directly, not when imported by
+// release.test.mjs.
+if (path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1] ?? "")) {
+  main();
+}
