@@ -1,15 +1,5 @@
 import type { LocalDeviceGroup, LocalDeviceGroupMember } from "../lib/api";
-
-export const CHANNELS: { id: string; label: string }[] = [
-  { id: "live-response", label: "Defender Live Response" },
-  { id: "intune-remediation", label: "On-demand Intune Remediation" },
-  { id: "win32-app", label: "Intune (Win32 app)" },
-  { id: "expedited-quality-update", label: "Expedited Quality Update" },
-];
-
-export const CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
-  CHANNELS.map((c) => [c.id, c.label]),
-);
+import type { Target } from "./scheduleTarget";
 
 const SEVERITIES = ["", "none", "low", "medium", "high", "critical"] as const;
 const SEVERITY_LABELS: Record<(typeof SEVERITIES)[number], string> = {
@@ -28,35 +18,6 @@ const PATCH_TYPES: { id: "" | "app" | "os"; label: string }[] = [
 
 export const INPUT_CLASS =
   "w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-slate-400 dark:focus:border-slate-600 focus:outline-none";
-
-/** The `target` jsonb this UI reads/writes — mirrors ScheduleTarget in packages/shared. */
-export interface Target {
-  severity?: string;
-  patchType?: "app" | "os";
-  deviceGroupId?: string;
-  excludedManagedDeviceIds?: string[];
-  /** Set only by RunNowModal's Automated tab — locks the schedule to one software title. Not editable here. */
-  software?: string;
-}
-
-export function summarizeTarget(target: Record<string, unknown>, groups: LocalDeviceGroup[]): string {
-  const t = target as Target;
-  const parts: string[] = [];
-  if (t.software) parts.push(`only "${t.software}"`);
-  if (t.deviceGroupId) {
-    const g = groups.find((g) => g.id === t.deviceGroupId);
-    parts.push(g ? `group "${g.name}"` : "an unknown/deleted group");
-  } else {
-    parts.push("all devices");
-  }
-  if (t.excludedManagedDeviceIds?.length) {
-    parts.push(`${t.excludedManagedDeviceIds.length} excluded`);
-  }
-  if (t.severity === "none") parts.push("none (includes non-CVE software)");
-  else if (t.severity) parts.push(`${t.severity}+ severity`);
-  if (t.patchType) parts.push(t.patchType === "app" ? "app fixes only" : "OS updates only");
-  return parts.join(" · ");
-}
 
 /** Target editor shared by the create-schedule popout and the per-row "Edit targeting" expand. */
 export function ScheduleTargetFields({

@@ -1,25 +1,11 @@
-// Per-engineer light/dark preference (Settings has none for this — it's
-// personal, not tenant-wide, so it lives on the engineer's own row via
-// PATCH /auth/me/theme, not in @patchpilot/db's `settings` table).
-//
-// Initialized from the authenticated engineer (GET /auth/me), applied as a
-// `dark` class on <html> (see index.css's `@custom-variant dark`), and kept
-// in sync with the server so the preference follows an engineer across
-// devices/browsers rather than living only in this one's localStorage.
+// <ThemeProvider> and <ThemeToggle> — see theme.ts for the context and why
+// the preference is stored per engineer.
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { useEngineer } from "./auth";
-
-export type Theme = "light" | "dark";
-
-interface ThemeContextValue {
-  theme: Theme;
-  toggle: () => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+import { ThemeContext, useTheme, type Theme } from "./theme";
 
 function applyTheme(theme: Theme): void {
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -59,14 +45,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>;
-}
-
-export function useTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) {
-    throw new Error("useTheme must be used inside <ThemeProvider>");
-  }
-  return ctx;
 }
 
 /** Crescent-moon toggle for the top bar — see App.tsx's EngineerMenu. */

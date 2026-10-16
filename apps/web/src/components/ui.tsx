@@ -188,43 +188,12 @@ export function SeverityChip({ severity }: { severity: string }) {
   );
 }
 
-/**
- * Defender returns remediation types as PascalCase tokens ("AttentionRequired",
- * "ConfigurationChange"); the portal renders them spaced and sentence-cased, so
- * we match it rather than leaking the raw API token into the table.
- */
-export function prettyRemediationType(type: string | null | undefined): string {
-  if (!type) return "—";
-  const spaced = type.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
-}
-
-/**
- * Defender remediation types PatchPilot can actually drive. "Update" installs a
- * newer package and "Uninstall" removes it — both map to a Run Now flow.
- * "AttentionRequired" is Defender's own signal that there is no package to act
- * on (the vulnerable code is a component bundled inside another app), and
- * "ConfigurationChange" is a misconfiguration handled in Intune/Group Policy.
- * An unrecognised type is treated as unsupported rather than silently offered.
- */
-const REMEDIABLE_TYPES = new Set(["update", "uninstall"]);
-
-export function isRemediableType(type: string | null | undefined): boolean {
-  return REMEDIABLE_TYPES.has((type ?? "").toLowerCase());
-}
-
 export const UNSUPPORTED_REMEDIATION_REASON =
   "Attention required — Defender has no package to update; the owning application has to ship the fix";
 
 /** Fix Now tooltip for inventory rows that are part of Windows (incl. .NET Framework). */
 export const WINDOWS_UPDATE_REASON =
   "Part of Windows — updated by Windows Update (monthly cumulative update), not by PatchPilot packages.";
-
-// The "due soon" threshold and the three-state bucketing now live in
-// @patchpilot/shared so the server can compute the same Dashboard tile counts
-// the list pages filter by. Re-exported here because ~20 call sites already
-// import them from this module.
-export { DUE_SOON_DAYS, slaTone, type SlaTone } from "@patchpilot/shared";
 
 const SLA_STYLES = chipClasses(SLA_TOKENS);
 

@@ -25,7 +25,8 @@ import {
   SlideOver,
   type ResponsiveTableColumn,
 } from "../components/ui";
-import { SortIcon, formatDate, type SortDir } from "../components/cve";
+import { SortIcon, type SortDir } from "../components/cve";
+import { formatDate } from "../components/cveFormat";
 import { toDevice } from "./dashboard/links";
 
 /** Triggers a browser download of `text` without a server round-trip — used for

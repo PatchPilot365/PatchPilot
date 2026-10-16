@@ -6,7 +6,7 @@ import { useBranding, DEFAULT_LOGO_URL, PRODUCT_NAME } from "../../lib/branding"
  * { authenticated: false } body). Replaces the old instant
  * `window.location.href = "/auth/login"` redirect: the browser now waits
  * here until the engineer clicks the button, which is the only thing that
- * starts the OIDC redirect. See lib/auth.tsx's useLogout()/AuthGate.
+ * starts the OIDC redirect. See lib/auth.ts's useLogout() and lib/AuthGate.tsx.
  *
  * Only ever rendered once AuthGate's entraConfigured check has already
  * passed — an unpaired instance shows <SetupPairing /> instead, checked

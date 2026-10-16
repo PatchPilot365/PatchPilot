@@ -26,7 +26,7 @@ import {
   SeverityChip,
   SlideOver,
 } from "../components/ui";
-import { formatDate } from "../components/cve";
+import { formatDate } from "../components/cveFormat";
 import { RunNowModal } from "../components/RunNowModal";
 
 const METHOD_LABELS: Record<WingetMatch["method"], string> = {

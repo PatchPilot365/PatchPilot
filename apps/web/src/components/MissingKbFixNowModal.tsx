@@ -11,11 +11,9 @@ import {
 } from "../lib/api";
 import { useCan } from "../lib/auth";
 import { DateTimePicker } from "./DateTimePicker";
-import {
-  QualityUpdateOptionsPanel,
-  defaultQualityUpdateOptions,
-  type QualityUpdateOptionsValue,
-} from "./QualityUpdateOptionsPanel";
+import { QualityUpdateOptionsPanel } from "./QualityUpdateOptionsPanel";
+import { type QualityUpdateOptionsValue } from "./qualityUpdateOptions";
+import { defaultQualityUpdateOptions } from "./qualityUpdateOptions";
 import { SlideOver } from "./ui";
 
 /**

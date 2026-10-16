@@ -37,24 +37,17 @@ import {
 } from "../lib/scripts";
 import { useCan } from "../lib/auth";
 import { DateTimePicker } from "./DateTimePicker";
-import {
-  defaultRecurrence,
-  RecurrencePicker,
-  toCron,
-  type Recurrence,
-} from "./RecurrencePicker";
+import { RecurrencePicker } from "./RecurrencePicker";
+import { type Recurrence } from "./recurrence";
+import { defaultRecurrence, toCron } from "./recurrence";
 import { WizardShell } from "./WizardShell";
-import {
-  defaultWin32DeployOptions,
-  Win32DeployOptionsPanel,
-  type Win32DeployOptionsValue,
-} from "./Win32DeployOptionsPanel";
+import { Win32DeployOptionsPanel } from "./Win32DeployOptionsPanel";
+import { type Win32DeployOptionsValue } from "./win32DeployOptions";
+import { defaultWin32DeployOptions } from "./win32DeployOptions";
 import { MicrosoftStorePicker, type StoreAppPick } from "./MicrosoftStorePicker";
-import {
-  defaultStoreAppDeployOptions,
-  StoreAppDeployOptionsPanel,
-  type StoreAppDeployOptionsValue,
-} from "./StoreAppDeployOptionsPanel";
+import { StoreAppDeployOptionsPanel } from "./StoreAppDeployOptionsPanel";
+import { type StoreAppDeployOptionsValue } from "./storeAppDeployOptions";
+import { defaultStoreAppDeployOptions } from "./storeAppDeployOptions";
 
 /**
  * The shared "Run now" remediation dialog, opened from the Vulnerabilities
@@ -1344,6 +1337,11 @@ export function RunNowModal({
   // Re-run the pre-flight whenever any dispatch-relevant choice changes so the
   // gate result stays in lockstep with the Dispatch button's enabled state.
   // Manual "record" has no channel/script to preview — skip it entirely.
+  // winget-app has no overridePackageId (that field only covers
+  // winget/chocolatey catalog picks) — without this in the deps below, picking
+  // a Store search result never re-triggers the preflight refetch, and the
+  // preview panel is stuck showing whatever it last rendered (or nothing).
+  const storeAppPackageId = storeAppPick?.packageId ?? null;
   useEffect(() => {
     if (!open) return;
     remediate.reset();
@@ -1368,11 +1366,7 @@ export function RunNowModal({
     channel,
     source,
     overridePackageId,
-    // winget-app has no overridePackageId (that field only covers
-    // winget/chocolatey catalog picks) — without this, picking a Store
-    // search result never re-triggers the preflight refetch, and the
-    // preview panel is stuck showing whatever it last rendered (or nothing).
-    storeAppPick?.packageId ?? null,
+    storeAppPackageId,
     action,
     effectiveManualScript,
     remediationOption,

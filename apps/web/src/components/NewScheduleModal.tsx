@@ -3,19 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LocalDeviceGroup, type LocalDeviceGroupMember, type Schedule } from "../lib/api";
 import { useCan } from "../lib/auth";
 import { WizardShell } from "./WizardShell";
-import {
-  cronToRecurrence,
-  defaultRecurrence,
-  RecurrencePicker,
-  toCron,
-  type Recurrence,
-} from "./RecurrencePicker";
-import {
-  CHANNELS,
-  INPUT_CLASS,
-  ScheduleTargetFields,
-  type Target,
-} from "./ScheduleTargetFields";
+import { RecurrencePicker } from "./RecurrencePicker";
+import { type Recurrence } from "./recurrence";
+import { cronToRecurrence, defaultRecurrence, toCron } from "./recurrence";
+import { INPUT_CLASS, ScheduleTargetFields } from "./ScheduleTargetFields";
+import { type Target } from "./scheduleTarget";
+import { CHANNELS } from "./scheduleTarget";
 
 export function NewScheduleModal({
   open,

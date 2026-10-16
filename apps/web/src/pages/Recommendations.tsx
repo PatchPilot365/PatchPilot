@@ -7,6 +7,7 @@ import {
   detectMicrosoftStoreInstall,
   isOsFinding,
   requiresManualRemediation,
+  slaTone,
 } from "@patchpilot/shared";
 import {
   api,
@@ -23,37 +24,10 @@ import { useTenant } from "../lib/tenant";
 import { RunNowModal } from "../components/RunNowModal";
 import { ExceptionModal } from "../components/ExceptionModal";
 import { downloadCsv } from "../lib/csv";
-import {
-  Card,
-  DetailRow,
-  isRemediableType,
-  MsStoreChip,
-  PageHeader,
-  prettyRemediationType,
-  ResponsiveTable,
-  type ResponsiveTableColumn,
-  ScopeChip,
-  SeverityChip,
-  SlaChip,
-  slaTone,
-  SlideOver,
-  UNSUPPORTED_REMEDIATION_REASON,
-} from "../components/ui";
-import {
-  CveDetailBody,
-  CveSortableTh,
-  daysAgo,
-  DetectionEvidence,
-  ExceptionChip,
-  ExploitChip,
-  formatDate,
-  SeverityCounts,
-  SEVERITY_ORDER,
-  SEVERITY_RANK,
-  SortIcon,
-  type CveSortKey,
-  type SortDir,
-} from "../components/cve";
+import { Card, DetailRow, MsStoreChip, PageHeader, ResponsiveTable, type ResponsiveTableColumn, ScopeChip, SeverityChip, SlaChip, SlideOver, UNSUPPORTED_REMEDIATION_REASON } from "../components/ui";
+import { isRemediableType, prettyRemediationType } from "../components/remediationType";
+import { CveDetailBody, CveSortableTh, DetectionEvidence, ExceptionChip, ExploitChip, SeverityCounts, SEVERITY_ORDER, SEVERITY_RANK, SortIcon, type CveSortKey, type SortDir } from "../components/cve";
+import { daysAgo, formatDate } from "../components/cveFormat";
 
 /**
  * Defender's TVM "Recommendations" view, mirrored 1:1 — every row here is a row

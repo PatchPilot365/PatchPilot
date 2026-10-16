@@ -399,7 +399,10 @@ export function Tenants() {
   // Same admin-consent targets the onboarding report already computes
   // (routes/onboarding.ts) — every customer tenant (the MSP's own home
   // tenant consents during deployment, not via a per-customer URL).
-  const consentTargets = onboarding?.consentTargets ?? [];
+  const consentTargets = useMemo(
+    () => onboarding?.consentTargets ?? [],
+    [onboarding?.consentTargets],
+  );
 
   const visibleConsentTargets = useMemo(() => {
     const q = consentSearch.trim().toLowerCase();

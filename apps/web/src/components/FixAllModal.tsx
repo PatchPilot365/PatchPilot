@@ -13,11 +13,9 @@ import { useCan } from "../lib/auth";
 import { DateTimePicker } from "./DateTimePicker";
 import { ManualRemediationTag, MsStoreChip, ScopeChip, SeverityChip } from "./ui";
 import { WizardShell } from "./WizardShell";
-import {
-  defaultWin32DeployOptions,
-  Win32DeployOptionsPanel,
-  type Win32DeployOptionsValue,
-} from "./Win32DeployOptionsPanel";
+import { Win32DeployOptionsPanel } from "./Win32DeployOptionsPanel";
+import { type Win32DeployOptionsValue } from "./win32DeployOptions";
+import { defaultWin32DeployOptions } from "./win32DeployOptions";
 
 // Live search-and-pick over the mirrored winget catalog, replacing free-text
 // package id entry. Debounced the same way as RunNowModal's picker; each row

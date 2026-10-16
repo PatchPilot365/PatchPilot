@@ -2,7 +2,7 @@ import { isSystemActor, systemActorLabel, type AuditOutcome } from "@patchpilot/
 import { Link, useNavigate } from "react-router-dom";
 import type { AuditRecord } from "../../lib/api";
 import { Card } from "../../components/ui";
-import { relativeTime } from "./TenantHealthStrip";
+import { relativeTime } from "./relativeTime";
 import { toAudit, toAuditResource } from "./links";
 
 const OUTCOME_DOT: Record<AuditOutcome, string> = {

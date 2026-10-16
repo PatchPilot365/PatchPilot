@@ -1,16 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  cronToRecurrence,
-  defaultRecurrence,
-  describeCron,
-  describeRecurrence,
-  describeTimeZone,
-  RecurrencePicker,
-  toCron,
-  type Recurrence,
-} from "./RecurrencePicker";
+import { RecurrencePicker } from "./RecurrencePicker";
+import { type Recurrence } from "./recurrence";
+import { cronToRecurrence, defaultRecurrence, describeCron, describeRecurrence, describeTimeZone, toCron } from "./recurrence";
 
 /** A full Recurrence with a fixed timezone, so `toCron`/`describe*` inputs stay terse. */
 function rec(over: Partial<Recurrence> = {}): Recurrence {
