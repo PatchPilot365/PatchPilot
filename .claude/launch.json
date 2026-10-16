@@ -17,6 +17,12 @@
       "name": "worker",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@patchpilot/worker", "dev:resilient"]
+    },
+    {
+      "name": "licensing",
+      "runtimeExecutable": "pwsh",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:PORT='4100'; pnpm -C ../patchpilot-licensing dev"],
+      "port": 5174
     }
   ]
 }
