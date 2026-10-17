@@ -30,6 +30,7 @@ import {
   CLIENT_BUILDS,
   type InstallScope,
   versionLineFamilyName,
+  isCheckinStale,
 } from "@patchpilot/shared";
 import { downloadCsv } from "../lib/csv";
 import { useTenant } from "../lib/tenant";
@@ -477,6 +478,29 @@ function ExcludedChip({ reason }: { reason?: string | null }) {
       className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-200"
     >
       Excluded
+    </span>
+  );
+}
+
+/**
+ * Marks a device that hasn't checked in within the last 24 hours — the same
+ * window Live Response uses to skip it (see isCheckinStale). Informational
+ * only: the device stays in every list and count, since it's still a real
+ * Defender device until someone excludes it. Not shown on an excluded device,
+ * where the Excluded chip already says why it's inactive.
+ */
+function StaleChip({ lastSeen }: { lastSeen: string | null }) {
+  const days = lastSeen ? daysAgo(lastSeen) : null;
+  return (
+    <span
+      title={
+        lastSeen
+          ? `Last checked in ${new Date(lastSeen).toLocaleString()}, more than 24 hours ago. Live Response jobs skip this device until it checks in again.`
+          : "This device has never reported a check-in. Live Response jobs skip it until it does."
+      }
+      className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+    >
+      {days === null ? "Never seen" : `Not seen ${Math.max(days, 1)}d`}
     </span>
   );
 }
@@ -1254,6 +1278,7 @@ export function Devices() {
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-800 dark:text-slate-100">{d.hostname}</span>
             {d.excluded && <ExcludedChip reason={d.exclusionReason} />}
+            {!d.excluded && isCheckinStale(d.lastSeen ?? null, new Date()) && <StaleChip lastSeen={d.lastSeen ?? null} />}
           </div>
           {d.owner && <div className="text-xs text-slate-400 dark:text-slate-500">{d.owner}</div>}
         </div>
@@ -1592,10 +1617,14 @@ export function Devices() {
                     Behind
                   </span>
                 )}
-                {selected.lastSeen && (
-                  <span className="text-xs text-slate-400 dark:text-slate-500">
-                    seen {daysAgo(selected.lastSeen)}d ago
-                  </span>
+                {!selectedExcluded && isCheckinStale(selected.lastSeen ?? null, new Date()) ? (
+                  <StaleChip lastSeen={selected.lastSeen ?? null} />
+                ) : (
+                  selected.lastSeen && (
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                      seen {daysAgo(selected.lastSeen)}d ago
+                    </span>
+                  )
                 )}
                 <div className="ml-auto flex items-center gap-2">
                   {selectedBehindFeatureUpdate &&
