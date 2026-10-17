@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.14] - 2026-10-17
+
 - The run dialog's pre-flight checks now warn when the device hasn't checked
   in for more than 24 hours. For Live Response, the warning says the job will
   be skipped unless Defender shows the device back online when it runs.
