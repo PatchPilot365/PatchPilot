@@ -12,6 +12,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Development: lint now flags a promise returned without `await` inside a
+  `try` block in the worker and Microsoft API code, the mistake behind the
+  missing-KB and Chocolatey error-output bug fixed in 1.0.14.
+
 ## [1.0.14] - 2026-10-17
 
 - The run dialog's pre-flight checks now warn when the device hasn't checked

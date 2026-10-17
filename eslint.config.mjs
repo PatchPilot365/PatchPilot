@@ -54,6 +54,22 @@ export default tseslint.config(
     },
   },
   {
+    // The one type-aware rule, kept to the worker and graph packages where
+    // jobs and Microsoft calls run. A promise returned unawaited inside `try`
+    // rejects past its `catch` — the executor's KB and Chocolatey Live
+    // Response paths did exactly that, failing jobs without their error
+    // output. Not repo-wide: the api's idiomatic `return reply.send(...)` is a
+    // thenable the rule can't tell from a real promise.
+    files: ["apps/worker/src/**/*.ts", "packages/graph/src/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      "@typescript-eslint/return-await": ["error", "in-try-catch"],
+    },
+  },
+  {
     files: ["**/*.test.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
