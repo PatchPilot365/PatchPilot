@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.13] - 2026-10-17
+
 - The Dashboard's Remediation throughput card now shows the right success
   rate. It printed the raw fraction with a % sign ("0.1375% success")
   instead of the percentage ("14% success").
