@@ -287,6 +287,37 @@ const LOCK_PREFIX = "patchpilot:live-response-lock:";
 const DEVICE_LOCK_TIMEOUT_MS = REMEDIATION_JOB_TIMEOUT_MS + REMEDIATION_CANCEL_GRACE_MS + 60_000;
 
 const LOCK_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * The device's last check-in as Defender reports it right now (the machine's
+ * `lastSeen`), or `undefined` when the lookup fails — the caller then falls
+ * back to the time stored at the last sync. Read before dispatch so a device
+ * that went offline since the last sync is caught (see device-checkin.ts).
+ */
+export async function fetchDefenderLastSeen(input: {
+  engineer: string;
+  homeTenantId: string;
+  tenantId: string;
+  machineId: string;
+}): Promise<Date | null | undefined> {
+  try {
+    const res = await graphGet<{ lastSeen?: string | null }>({
+      engineer: input.engineer,
+      homeTenantId: input.homeTenantId,
+      tenantId: input.tenantId,
+      host: "defender",
+      path: `/machines/${encodeURIComponent(input.machineId)}`,
+    });
+    if (!res.ok) return undefined;
+    const raw = res.data?.lastSeen;
+    if (!raw) return null;
+    const seen = new Date(raw);
+    return Number.isNaN(seen.getTime()) ? undefined : seen;
+  } catch (err) {
+    modLog.warn({ err, machineId: input.machineId }, "Defender lastSeen lookup failed; falling back to the synced value");
+    return undefined;
+  }
+}
 /** How often a queued job logs that it's still waiting for the device. */
 const LOCK_WAIT_HEARTBEAT_MS = 60_000;
 // Long enough to wait out every other job this worker can be running against

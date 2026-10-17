@@ -30,8 +30,10 @@ import {
   runLiveResponseRemediation,
   runLiveResponseKbRemediation,
   runLiveResponseChocolateyRemediation,
+  fetchDefenderLastSeen,
   type LiveResponseRunControl,
 } from "./live-response.js";
+import { checkinVerdict } from "./device-checkin.js";
 
 /**
  * The real remediation executor (Phase 5, Workstream B).
@@ -435,6 +437,23 @@ export async function executeRemediation(
         const machineId = device?.defenderMachineId;
         if (!machineId) {
           return notPerformed(spec.label, "device has no Defender machine id");
+        }
+
+        // Skip a device that hasn't checked in within the last 24 hours, before
+        // the quota slot or the device lock (see device-checkin.ts). Defender's
+        // live lastSeen is the real signal; the synced value is the fallback.
+        const liveSeen = await fetchDefenderLastSeen({
+          engineer: payload.engineer,
+          homeTenantId: HOME_TENANT_ID,
+          tenantId: payload.tenantId,
+          machineId,
+        });
+        const checkin =
+          liveSeen === undefined
+            ? checkinVerdict(device!.hostname, device!.lastSeen ?? null, "as of the last sync")
+            : checkinVerdict(device!.hostname, liveSeen, "per Defender");
+        if (!checkin.recent) {
+          return notPerformed(spec.label, checkin.reason);
         }
 
         // PatchPilot's per-tenant Live Response device quota — authoritative,
