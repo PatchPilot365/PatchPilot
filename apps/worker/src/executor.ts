@@ -101,11 +101,23 @@ async function resolveDevicePackageId(packageId: string, installedVersion: strin
 
 export async function executeRemediation(
   payload: RemediationJob,
-  onProgress?: (transcript: string) => void | Promise<void>,
+  reportProgress?: (transcript: string) => void | Promise<void>,
   /** The job time limit hooks — see LiveResponseRunControl. Only the Live Response channel uses them. */
   control?: LiveResponseRunControl,
 ): Promise<ExecutionResult> {
   const spec = CHANNEL_SPECS[payload.channel];
+
+  // The latest progress transcript, kept so a run that throws part-way (a
+  // dropped connection mid-poll, say) still records what it had done — the
+  // job's output is otherwise replaced by just the error, losing the steps
+  // that explain it.
+  let transcript = "";
+  const onProgress = async (t: string): Promise<void> => {
+    transcript = t;
+    await reportProgress?.(t);
+  };
+  const afterTranscript = (line: string): string =>
+    transcript.trim() ? `${transcript.trimEnd()}\n${line}` : line;
 
   // (1) DEMO_MODE: simulate, never call Microsoft.
   if (env.DEMO_MODE) {
@@ -471,9 +483,11 @@ export async function executeRemediation(
         }
 
         // Missing-KB (OS) dispatch: the WUA COM script for this specific KB,
-        // baked in rather than passed as an Args token.
+        // baked in rather than passed as an Args token. `return await`, not a
+        // bare return: a rejected promise returned unawaited skips the catch
+        // below, so the job would fail without its transcript or error line.
         if (payload.kbId) {
-          return runLiveResponseKbRemediation({
+          return await runLiveResponseKbRemediation({
             engineer: payload.engineer,
             homeTenantId: HOME_TENANT_ID,
             tenantId: payload.tenantId,
@@ -489,7 +503,7 @@ export async function executeRemediation(
         // the winget mapping outright, mirroring remediationScript()'s priority
         // in scripts.ts so the job matches the script the engineer reviewed.
         if (payload.source === "chocolatey" && payload.altPackageId) {
-          return runLiveResponseChocolateyRemediation({
+          return await runLiveResponseChocolateyRemediation({
             engineer: payload.engineer,
             homeTenantId: HOME_TENANT_ID,
             tenantId: payload.tenantId,
@@ -531,7 +545,7 @@ export async function executeRemediation(
           packageId: wingetId,
           installScope: payload.installScope,
           action: payload.action,
-          onProgress: onProgress && familyNote ? (t) => onProgress(familyNote + t) : onProgress,
+          onProgress: familyNote ? (t) => onProgress(familyNote + t) : onProgress,
           control,
         });
         return familyNote ? { ...result, output: familyNote + result.output } : result;
@@ -616,9 +630,9 @@ export async function executeRemediation(
     // A GraphError (e.g. 401 no token, 403 missing scope) is an honest failure —
     // surface its status/message rather than letting BullMQ swallow it as a retry.
     if (err instanceof GraphError) {
-      return { exitCode: 1, output: `${spec.label}: ${err.message} (HTTP ${err.status}).` };
+      return { exitCode: 1, output: afterTranscript(`${spec.label}: ${err.message} (HTTP ${err.status}).`) };
     }
     const message = err instanceof Error ? err.message : String(err);
-    return { exitCode: 1, output: `${spec.label}: execution error — ${message}` };
+    return { exitCode: 1, output: afterTranscript(`${spec.label}: execution error — ${message}`) };
   }
 }

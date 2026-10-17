@@ -9,6 +9,7 @@ import {
   isDeviceInScheduleScope,
   isExclusionLive,
   isOsFinding,
+  isCheckinStale,
   resolveDisplaySoftwareName,
   bundledComponent,
   compareWingetVersions,
@@ -509,6 +510,14 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
   let alreadyUpToDate = 0;
   let cvesCovered = 0;
 
+  const fireTime = new Date();
+  const offlineDeviceIds = new Set<string>();
+  const isOffline = (device: { id: string; lastSeen: Date | null }): boolean => {
+    if (!leaveOutOffline(channel, tenant.lastSyncedAt, device.lastSeen, fireTime)) return false;
+    offlineDeviceIds.add(device.id);
+    return true;
+  };
+
   // Multiple open CVEs against the same software on one device resolve to an
   // identical dispatch — remediationScript()'s output never varies by CVE, so
   // patching the software once (e.g. one Live Response run) closes every CVE
@@ -534,6 +543,7 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
     const device = deviceByMachine.get(link.defenderMachineId);
     if (!vuln || !device) continue;
     if (!isDeviceInScheduleScope(device.managedDeviceId, target, groupMemberIds)) continue;
+    if (isOffline(device)) continue;
 
     // Smart targeting: local-DB-only freshness check, same signal as the
     // Software Inventory upToDate comparison (compareWingetVersions against
@@ -738,6 +748,7 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
       if (!device) continue;
       if (target.software && dispatchedDeviceIds.has(device.id)) continue;
       if (!isDeviceInScheduleScope(device.managedDeviceId, target, groupMemberIds)) continue;
+      if (isOffline(device)) continue;
 
       if (
         inv.matchedLatestVersion &&
@@ -833,7 +844,7 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
   const totalUpToDate = alreadyUpToDate + nonCveUpToDate;
 
   fireLog.info(
-    { totalEnqueued, nonCveEnqueued, totalSkipped, totalUpToDate },
+    { totalEnqueued, nonCveEnqueued, totalSkipped, totalUpToDate, offlineDevices: offlineDeviceIds.size },
     "fire complete",
   );
 
@@ -846,6 +857,9 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
     nonCveEnqueued > 0 ? `${nonCveEnqueued} non-CVE software job(s) enqueued` : null,
     nonCveSkipped > 0 ? `${nonCveSkipped} non-CVE (device, software) pair(s) refused by preflight` : null,
     nonCveUpToDate > 0 ? `${nonCveUpToDate} non-CVE (device, software) pair(s) already up to date` : null,
+    offlineDeviceIds.size > 0
+      ? `${offlineDeviceIds.size} device(s) left out — not checked in within the last 24 hours`
+      : null,
   ].filter((p): p is string => p !== null);
 
   await auditFire(
@@ -856,7 +870,7 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
     // enqueued nothing solely because every candidate was already patched is
     // a successful no-op, not a blocked one.
     totalEnqueued === 0
-      ? totalUpToDate > 0 && totalSkipped === 0
+      ? totalUpToDate > 0 && totalSkipped === 0 && offlineDeviceIds.size === 0
         ? "success"
         : "skipped"
       : totalSkipped > 0
@@ -864,6 +878,28 @@ async function fanOutSchedule(scheduleId: string): Promise<void> {
         : "success",
     `"${schedule.name}" fired — enqueued ${totalEnqueued} ${channel} job(s) across ${tenant.displayName}`,
     detailParts.length > 0 ? detailParts.join("; ") : null,
+  );
+}
+
+/**
+ * Whether a scheduled fan-out leaves this device out as offline. Live Response
+ * needs the device online, and the executor skips one not seen in 24 hours
+ * (see checkin.ts) — leaving it out here instead keeps a weekly schedule from
+ * filling the Jobs page with skipped jobs. Only when the tenant's own last sync
+ * is within that window too: a stale sync means a stale lastSeen, and then the
+ * job is enqueued and the executor's live Defender check decides.
+ */
+export function leaveOutOffline(
+  channel: RemediationJob["channel"],
+  tenantLastSyncedAt: Date | null,
+  deviceLastSeen: Date | null,
+  now: Date,
+): boolean {
+  return (
+    channel === "live-response" &&
+    tenantLastSyncedAt !== null &&
+    !isCheckinStale(tenantLastSyncedAt, now) &&
+    isCheckinStale(deviceLastSeen, now)
   );
 }
 

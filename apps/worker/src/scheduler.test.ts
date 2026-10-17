@@ -68,7 +68,7 @@ vi.mock("@patchpilot/db", async (importOriginal) => {
   };
 });
 
-const { reconcileSchedules, scheduledJobPayload } = await import("./scheduler.js");
+const { leaveOutOffline, reconcileSchedules, scheduledJobPayload } = await import("./scheduler.js");
 
 function schedule(over: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -284,5 +284,28 @@ describe("scheduledJobPayload", () => {
 
   it("leaves packageId null for a CVE job without an override, so the worker uses the CVE's stored mapping", () => {
     expect(scheduledJobPayload({ ...row, cveId: "CVE-2026-0001", packageId: null }, "# script").packageId).toBeNull();
+  });
+});
+
+describe("leaveOutOffline", () => {
+  const NOW = new Date("2026-10-17T12:00:00Z");
+  const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
+
+  it("leaves out a Live Response device unseen for over 24 hours when the tenant synced recently", () => {
+    expect(leaveOutOffline("live-response", hoursAgo(1), hoursAgo(30), NOW)).toBe(true);
+    expect(leaveOutOffline("live-response", hoursAgo(1), null, NOW)).toBe(true);
+  });
+
+  it("keeps a device seen within 24 hours", () => {
+    expect(leaveOutOffline("live-response", hoursAgo(1), hoursAgo(23), NOW)).toBe(false);
+  });
+
+  it("defers to the executor's live check when the tenant's sync is itself stale", () => {
+    expect(leaveOutOffline("live-response", hoursAgo(48), hoursAgo(72), NOW)).toBe(false);
+    expect(leaveOutOffline("live-response", null, hoursAgo(72), NOW)).toBe(false);
+  });
+
+  it("never leaves out devices for channels that apply on next check-in", () => {
+    expect(leaveOutOffline("intune-remediation", hoursAgo(1), hoursAgo(72), NOW)).toBe(false);
   });
 });

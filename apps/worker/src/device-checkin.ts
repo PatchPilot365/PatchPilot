@@ -1,3 +1,5 @@
+import { isCheckinStale } from "@patchpilot/shared";
+
 /**
  * Whether a device has checked in recently enough to be worth a Live Response
  * dispatch.
@@ -14,7 +16,7 @@
  * none), and a calendar-day cut would skip a device seen an hour before
  * midnight by a job that runs an hour after it.
  */
-export const CHECKIN_WINDOW_MS = 24 * 60 * 60_000;
+export { CHECKIN_WINDOW_MS } from "@patchpilot/shared";
 
 export type CheckinVerdict =
   | { recent: true }
@@ -37,7 +39,7 @@ export function checkinVerdict(
       reason: `${hostname} has no recorded check-in (${source}), so it is probably offline and Live Response would only time out. Skipped without contacting the device. Retry once the device is back online.`,
     };
   }
-  if (now.getTime() - lastSeen.getTime() <= CHECKIN_WINDOW_MS) return { recent: true };
+  if (!isCheckinStale(lastSeen, now)) return { recent: true };
   return {
     recent: false,
     reason: `${hostname} last checked in ${lastSeen.toISOString()} (${source}), more than 24 hours ago, so it is probably offline and Live Response would only time out. Skipped without contacting the device. Retry once the device is back online.`,

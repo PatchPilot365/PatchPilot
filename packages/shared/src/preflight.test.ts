@@ -140,6 +140,35 @@ describe("preflight", () => {
     expect(r.canProceed).toBe(true);
   });
 
+  describe("device check-in age", () => {
+    const run = (channel: "live-response" | "intune-remediation", now: string) =>
+      preflight({
+        vuln: appVuln,
+        device,
+        tenant: writableTenant,
+        channel,
+        writeGate: { allowed: true, reason: null },
+        now: new Date(now),
+      });
+    const detail = (r: ReturnType<typeof preflight>) => r.checks.find((c) => c.id === "device-health")!.detail;
+
+    it("passes a device seen within the last 24 hours", () => {
+      expect(status(run("live-response", "2026-06-22T23:00:00Z"), "device-health")).toBe("pass");
+    });
+
+    it("warns when Live Response targets a device unseen for over 24 hours", () => {
+      const r = run("live-response", "2026-06-23T00:00:01Z");
+      expect(status(r, "device-health")).toBe("warn");
+      expect(detail(r)).toContain("the job will be skipped without contacting the device");
+    });
+
+    it("words the warning for check-in-driven channels differently", () => {
+      const r = run("intune-remediation", "2026-06-25T00:00:00Z");
+      expect(status(r, "device-health")).toBe("warn");
+      expect(detail(r)).toContain("won't apply until it checks in again");
+    });
+  });
+
   // Device exclusion. PatchPilot's exclusion blocks remediation as well as
   // hiding the device — Defender's is visibility-only — so these are the tests
   // that prove the extra enforcement actually holds at the dispatch gate.

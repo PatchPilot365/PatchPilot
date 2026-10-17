@@ -12,6 +12,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- The run dialog's pre-flight checks now warn when the device hasn't checked
+  in for more than 24 hours. For Live Response, the warning says the job will
+  be skipped unless Defender shows the device back online when it runs.
+- Scheduled Live Response runs now leave out devices that haven't checked in
+  within the last 24 hours, instead of queuing jobs that would only be
+  skipped. This only applies when the tenant synced within the last day, so
+  stale sync data can't hide a device. The schedule's audit entry says how
+  many devices were left out.
+- A Live Response job that fails part-way now keeps its progress log in the
+  job output, followed by the error, instead of showing only the error.
+  Missing-KB and Chocolatey runs that hit an error now also get the usual
+  "execution error" output.
+
 ## [1.0.13] - 2026-10-17
 
 - The Dashboard's Remediation throughput card now shows the right success
