@@ -16,6 +16,7 @@ import { isOsFinding } from "./os.js";
 import { manualRemediationReason } from "./manual-remediation.js";
 import { SOURCE_SPECS, type PackageSource } from "./sources.js";
 import type { InstallScope } from "./winget.js";
+import { isCheckinStale } from "./checkin.js";
 
 export type PreflightStatus = "pass" | "warn" | "fail";
 
@@ -113,6 +114,8 @@ export interface PreflightInput {
    * "live-response"` — every other channel has no device-quota concept.
    */
   liveResponseQuota?: { allowed: boolean; reason: string };
+  /** Clock for the device check-in age; defaults to the current time. */
+  now?: Date;
 }
 
 export interface PreflightReport {
@@ -276,22 +279,36 @@ export function preflight(input: PreflightInput): PreflightReport {
     });
   }
 
-  // 7. Device health — not blocking, but worth flagging.
-  checks.push(
-    device.lastSeen === null
-      ? {
-          id: "device-health",
-          label: "Device check-in",
-          status: "warn",
-          detail: `${device.hostname} has never reported in — the action may not apply until it does.`,
-        }
-      : {
-          id: "device-health",
-          label: "Device check-in",
-          status: "pass",
-          detail: `${device.hostname} last reported ${new Date(device.lastSeen).toLocaleString()}.`,
-        },
-  );
+  // 7. Device health — not blocking, but worth flagging. This is the synced
+  // check-in time, which can lag; for Live Response the worker re-checks
+  // Defender's live lastSeen and skips the device if it's still stale
+  // (see checkin.ts), so a warn here is a heads-up, not a verdict.
+  if (device.lastSeen === null) {
+    checks.push({
+      id: "device-health",
+      label: "Device check-in",
+      status: "warn",
+      detail: `${device.hostname} has never reported in — the action may not apply until it does.`,
+    });
+  } else if (isCheckinStale(device.lastSeen, input.now ?? new Date())) {
+    const when = new Date(device.lastSeen).toLocaleString();
+    checks.push({
+      id: "device-health",
+      label: "Device check-in",
+      status: "warn",
+      detail:
+        channel === "live-response"
+          ? `${device.hostname} last reported ${when}, more than 24 hours ago. Live Response needs the device online — unless Defender shows it back online when the job runs, the job will be skipped without contacting the device.`
+          : `${device.hostname} last reported ${when}, more than 24 hours ago — the action won't apply until it checks in again.`,
+    });
+  } else {
+    checks.push({
+      id: "device-health",
+      label: "Device check-in",
+      status: "pass",
+      detail: `${device.hostname} last reported ${new Date(device.lastSeen).toLocaleString()}.`,
+    });
+  }
 
   // 8. Package resolution — app patches need a package id to install. When an
   // alternate source is chosen (an app winget doesn't drive), validate that
