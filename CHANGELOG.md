@@ -12,6 +12,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [1.0.15] - 2026-10-17
+
 - The Devices page now shows an amber "Not seen Nd" badge on any device that
   hasn't checked in for more than 24 hours, in the list and the device
   panel. Hover it for the last check-in time. It's informational only: the
