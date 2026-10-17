@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeCveTrend, isCountedTowardMetrics } from "./dashboard.js";
+import { computeCveTrend, isCountedTowardMetrics, summarizeRemediation } from "./dashboard.js";
+import type { JobRecord } from "../jobs.js";
 import { summarizeTimeToRemediate } from "../posture/time-to-remediate.js";
 
 function hoursAgo(now: Date, hours: number): Date {
@@ -100,5 +101,46 @@ describe("computeCveTrend", () => {
     const trend = computeCveTrend([], [event], NOW, 30);
     expect(trend.reduce((n, d) => n + d.detected, 0)).toBe(0);
     expect(trend.reduce((n, d) => n + d.remediated, 0)).toBe(1);
+  });
+});
+
+describe("summarizeRemediation", () => {
+  const NOW = new Date("2026-10-17T12:00:00Z");
+  const job = (status: JobRecord["status"], exitCode: number | null, output: string | null, hours = 1) => ({
+    status,
+    channel: "live-response" as const,
+    exitCode,
+    output,
+    finishedAt: hoursAgo(NOW, hours).toISOString(),
+  });
+
+  it("keeps refusals and manual-action verdicts out of the success rate", () => {
+    const result = summarizeRemediation(
+      [
+        job("succeeded", 0, "upgraded"),
+        job("failed", -1978335212, "winget exited -1978335212"),
+        job("failed", 1, "Defender Live Response: no write performed — no mapped winget package for this software"),
+        job("failed", 9, "bundled with another product"),
+      ],
+      NOW,
+    );
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.notActionable).toBe(2);
+    expect(result.successRate).toBe(0.5);
+    expect(result.failedLast24h).toBe(1);
+    const today = result.days.at(-1)!;
+    expect(today).toEqual({ day: "2026-10-17", succeeded: 1, failed: 1, notActionable: 2 });
+  });
+
+  it("has no rate when every run was not actionable", () => {
+    const result = summarizeRemediation([job("failed", 10, "different installer type")], NOW);
+    expect(result.successRate).toBeNull();
+    expect(result.notActionable).toBe(1);
+  });
+
+  it("ignores jobs that haven't finished", () => {
+    const result = summarizeRemediation([{ ...job("running", null, null), finishedAt: null }], NOW);
+    expect(result.succeeded + result.failed + result.notActionable).toBe(0);
   });
 });

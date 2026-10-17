@@ -50,7 +50,7 @@ const EMPTY_TILES = {
 
 const EMPTY_TREND_COVERAGE = { requestedDays: 30, capturedDays: 0, firstDay: null, complete: false };
 
-const EMPTY_REMEDIATION = { days: [], succeeded: 0, failed: 0, successRate: null, failedLast24h: 0 };
+const EMPTY_REMEDIATION = { days: [], succeeded: 0, failed: 0, notActionable: 0, successRate: null, failedLast24h: 0 };
 
 const EMPTY_TIME_TO_REMEDIATE = {
   windowDays: 30,

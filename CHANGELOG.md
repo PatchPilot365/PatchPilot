@@ -15,6 +15,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 - The Dashboard's Remediation throughput card now shows the right success
   rate. It printed the raw fraction with a % sign ("0.1375% success")
   instead of the percentage ("14% success").
+- The remediation success rate (Dashboard and PDF reports) no longer counts
+  runs PatchPilot couldn't act on. These include jobs it refused before
+  dispatch, such as "no mapped winget package", and upgrades that need a
+  person, such as a copy bundled inside another product or an installer-type
+  mismatch. They are now shown separately as "not actionable", including a
+  grey band on the throughput chart. They are still failed jobs on the Jobs
+  page.
+- A Live Response winget upgrade that can't find the package while running
+  as SYSTEM now retries as the signed-in user, so per-user installs get
+  upgraded. If the package can't be found that way either, the job shows
+  "Needs attention" with a hover explanation instead of a bare winget error.
 
 ## [1.0.12] - 2026-10-16
 

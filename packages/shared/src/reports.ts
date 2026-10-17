@@ -163,12 +163,17 @@ export interface RemediationDayFact {
   day: string;
   succeeded: number;
   failed: number;
+  /** Absent on facts captured before this was split out of `failed`. */
+  notActionable?: number;
 }
 
 export interface RemediationFacts {
   days: RemediationDayFact[];
   succeeded: number;
   failed: number;
+  /** Failed runs PatchPilot couldn't act on, kept out of `failed` and `successRate`
+   *  (see isNotActionable). Absent on facts captured before the split. */
+  notActionable?: number;
   successRate: number | null;
   failedLast24h: number;
 }
@@ -446,6 +451,10 @@ export const EXECUTIVE_SUMMARY_DEF: ReportTypeDef<ExecutiveSummaryFacts> = {
         return (
           `PatchPilot completed ${f.remediation.succeeded} successful and ${f.remediation.failed} failed remediation ` +
           `${plural(f.remediation.succeeded + f.remediation.failed, "run")} over the last fourteen days — ${rate}. ` +
+          (f.remediation.notActionable
+            ? `A further ${f.remediation.notActionable} ${plural(f.remediation.notActionable, "run")} could not be acted on ` +
+              `(no supported update path, or the device needs manual attention) and ${plural(f.remediation.notActionable, "is", "are")} excluded from that rate. `
+            : "") +
           `${f.remediationActivity.totalRemediated} ${plural(f.remediationActivity.totalRemediated, "finding was", "findings were")} ` +
           `confirmed closed in the last ${f.remediationActivity.windowDays} days.`
         );

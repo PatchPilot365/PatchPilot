@@ -1417,13 +1417,18 @@ export interface DashboardRemediationDay {
   day: string;
   succeeded: number;
   failed: number;
+  notActionable: number;
 }
 
 export interface DashboardRemediation {
   days: DashboardRemediationDay[];
   succeeded: number;
+  /** Failed runs PatchPilot attempted — excludes `notActionable`. */
   failed: number;
-  /** null when zero runs — never divide by zero to render a rate. */
+  /** Failed runs PatchPilot couldn't act on (refused before dispatch, or a
+   *  needs-manual-action verdict) — kept out of `successRate`. See isNotActionable. */
+  notActionable: number;
+  /** succeeded / (succeeded + failed); null when that's zero — never divide by zero. */
   successRate: number | null;
   failedLast24h: number;
 }

@@ -27,6 +27,7 @@ import {
   SEVERITY_ORDER,
   SEVERITY_RANK,
   DUE_SOON_DAYS,
+  isNotActionable,
   type Severity,
   type SlaStatus,
   type SlaTone,
@@ -46,7 +47,7 @@ import {
   summarizeTimeToRemediate,
   type TimeToRemediateSummary,
 } from "../posture/time-to-remediate.js";
-import { listJobs } from "../jobs.js";
+import { listJobs, type JobRecord } from "../jobs.js";
 
 /**
  * GET /api/dashboard/summary — the one aggregate call the Dashboard makes
@@ -192,6 +193,8 @@ interface RemediationDayRow {
   day: string;
   succeeded: number;
   failed: number;
+  /** Failed runs PatchPilot couldn't act on — see isNotActionable. Not in `failed`. */
+  notActionable: number;
 }
 interface CveTrendDayRow {
   day: string;
@@ -425,14 +428,28 @@ export function osBreakdownRows(devices: readonly { os: string; compliance: Devi
 }
 
 async function remediationBlock(tenantId: string | undefined, now: Date) {
-  const jobs = await listJobs(tenantId, true);
+  return summarizeRemediation(await listJobs(tenantId, true), now);
+}
+
+/**
+ * The dashboard's remediation throughput. A failed job PatchPilot never could
+ * have completed — refused before dispatch ("no mapped winget package"), or a
+ * verdict that needs a person ("bundled with another product") — is counted as
+ * `notActionable`, not `failed`, so the success rate measures remediations
+ * PatchPilot actually attempted. See isNotActionable.
+ */
+export function summarizeRemediation(
+  jobs: Pick<JobRecord, "status" | "channel" | "exitCode" | "output" | "finishedAt">[],
+  now: Date,
+) {
   const byDay = new Map<string, RemediationDayRow>();
   for (let d = REMEDIATION_DAYS - 1; d >= 0; d--) {
     const day = dayString(now, d);
-    byDay.set(day, { day, succeeded: 0, failed: 0 });
+    byDay.set(day, { day, succeeded: 0, failed: 0, notActionable: 0 });
   }
   let succeeded = 0;
   let failed = 0;
+  let notActionable = 0;
   let failedLast24h = 0;
   const cutoff = now.getTime() - 24 * MS_PER_HOUR;
   for (const j of jobs) {
@@ -442,6 +459,9 @@ async function remediationBlock(tenantId: string | undefined, now: Date) {
     if (j.status === "succeeded") {
       succeeded += 1;
       if (row) row.succeeded += 1;
+    } else if (j.status === "failed" && isNotActionable(j)) {
+      notActionable += 1;
+      if (row) row.notActionable += 1;
     } else if (j.status === "failed") {
       failed += 1;
       if (row) row.failed += 1;
@@ -453,6 +473,7 @@ async function remediationBlock(tenantId: string | undefined, now: Date) {
     days: [...byDay.values()],
     succeeded,
     failed,
+    notActionable,
     successRate: total === 0 ? null : succeeded / total,
     failedLast24h,
   };

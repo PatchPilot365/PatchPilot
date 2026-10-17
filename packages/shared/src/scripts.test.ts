@@ -14,6 +14,7 @@ import {
   wingetLiveResponseLibraryScript,
   WIN32_SCRIPT_MARKER_KEY,
   WINGET_EXIT_INSTALL_TECHNOLOGY_MISMATCH,
+  WINGET_EXIT_NOT_VISIBLE,
   WINGET_EXIT_NOT_WINGET_MANAGED,
 } from "./scripts.js";
 
@@ -581,6 +582,43 @@ describe("wingetLiveResponseLibraryScript", () => {
     it("documents the not-winget-managed code in the script header", () => {
       expect(WINGET_EXIT_NOT_WINGET_MANAGED).toBe(9);
       expect(script).toContain("#   9 upgrade: the package (and its version-line/edition family) is not managed by");
+    });
+  });
+
+  describe("per-user retry when SYSTEM can't see the package", () => {
+    const retryAt = upgradeBlock.indexOf("retrying as the signed-in user");
+    const retry = upgradeBlock.slice(
+      upgradeBlock.lastIndexOf("if (", retryAt),
+      upgradeBlock.indexOf("if ($wingetExit -eq -1978335090) {"),
+    );
+
+    it("runs only for winget's no-installed-package exit, after the family fallback", () => {
+      expect(retryAt).toBeGreaterThan(upgradeBlock.indexOf("if ($members.Count -eq 0) {"));
+      expect(retry).toContain("if (-not $after -and $wingetExit -eq -1978335212) {");
+      expect(retry).toContain("Invoke-PatchPilotUserContextUpgrade -PackageId $packageId");
+    });
+
+    it("comes before the mismatch and generic-failure verdicts it would otherwise fall through to", () => {
+      expect(retryAt).toBeLessThan(upgradeBlock.indexOf("if ($wingetExit -ne 0) {"));
+    });
+
+    it("calls a package neither scope can see not-visible, a needs-attention verdict", () => {
+      expect(WINGET_EXIT_NOT_VISIBLE).toBe(11);
+      expect(retry).toContain("if ($userResult.Code -eq -1978335212 -or $userResult.Code -eq 3) {");
+      expect(retry).toContain(`Complete-PatchPilotRun -Code ${WINGET_EXIT_NOT_VISIBLE} -Message`);
+    });
+
+    it("keeps 'nobody signed in' a plain, retryable failure", () => {
+      expect(retry).toContain("if ($userResult.Code -eq 7) {");
+      expect(retry).toContain("Complete-PatchPilotRun -Code 7 -Message");
+    });
+
+    it("otherwise reports the per-user run's own verdict", () => {
+      expect(retry).toContain("Complete-PatchPilotRun -Code $userResult.Code");
+    });
+
+    it("documents the code in the script header", () => {
+      expect(script).toContain("#   11 upgrade: no installed package under this id, neither as SYSTEM nor for the");
     });
   });
 

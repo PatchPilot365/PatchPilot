@@ -466,6 +466,18 @@ describe("the registry", () => {
     const caption = COMPLIANCE_SLA_DEF.sections[1]!.caption(emptyComplianceFacts);
     expect(caption).toContain("No finding is currently overdue");
   });
+
+  it("names not-actionable remediation runs apart from the success rate", () => {
+    const section = [...EXECUTIVE_SUMMARY_DEF.sections, ...COMPLIANCE_SLA_DEF.sections].find(
+      (s) => s.id === "remediation-activity",
+    )!;
+    const facts = { ...executiveFacts, remediation: { ...executiveFacts.remediation, notActionable: 4 } };
+    const caption = section.caption(facts as never);
+    expect(caption).toContain("22 successful and 3 failed");
+    expect(caption).toContain("88% success rate");
+    expect(caption).toContain("A further 4 runs could not be acted on");
+    expect(section.caption(executiveFacts as never)).not.toContain("A further");
+  });
 });
 
 describe("safeHex", () => {
