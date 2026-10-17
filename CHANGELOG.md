@@ -12,6 +12,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- The Devices page now shows an amber "Not seen Nd" badge on any device that
+  hasn't checked in for more than 24 hours, in the list and the device
+  panel. Hover it for the last check-in time. It's informational only: the
+  device stays in every list and count until you exclude it, and excluded
+  devices don't get the badge.
 - Development: lint now flags a promise returned without `await` inside a
   `try` block in the worker and Microsoft API code, the mistake behind the
   missing-KB and Chocolatey error-output bug fixed in 1.0.14.
