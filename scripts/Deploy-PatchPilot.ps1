@@ -77,6 +77,12 @@ param(
     [Parameter(Mandatory = $false)]
     [switch] $RotateClientSecret,
 
+    # After a new client secret has been handed to the instance (pairing
+    # succeeded), revoke every older PatchPilot-Deploy-* secret on the app
+    # registration without prompting. Without this switch the script asks.
+    [Parameter(Mandatory = $false)]
+    [switch] $RevokeOldClientSecrets,
+
     # Read-only-first: by default the app registration requests ONLY read scopes,
     # so a fresh install can never issue a Microsoft write. Pass this switch to also
     # request the Phase 5 remediation write scopes (see $remediationWriteScopes
@@ -263,6 +269,7 @@ function Set-EnvFileValue {
         [string] $Key,
 
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string] $Value
     )
 
@@ -853,6 +860,7 @@ $pairingRequested = $InstanceUrl -and $PairingToken `
     -and -not ($InstanceUrl.StartsWith("{{") -and $InstanceUrl.EndsWith("}}")) `
     -and -not ($PairingToken.StartsWith("{{") -and $PairingToken.EndsWith("}}"))
 $paired = $false
+$secretPersisted = $false
 
 try {
     Ensure-Folder -Path $OutputFolder
@@ -1534,12 +1542,12 @@ try {
                 EndDateTime = (Get-Date).AddDays(90)
             }
 
-            Write-Host ""
-            Write-Host "    ===== COPY THIS SECRET NOW =====" -ForegroundColor Red
-            Write-Host "    Client ID:     $($app.AppId)" -ForegroundColor Yellow
-            Write-Host "    Client Secret: $($secret.SecretText)" -ForegroundColor Yellow
-            Write-Host "    Expires:       $($secret.EndDateTime)" -ForegroundColor Yellow
-            Write-Host "    =================================" -ForegroundColor Red
+            # The value is NOT printed here: this whole run is captured by
+            # Start-Transcript, so anything written to the console lands in a
+            # plain-text log in $OutputFolder too. Step [14/15] writes it to
+            # the env file (and step [15/15] sends it to a pairing instance);
+            # it's only shown on screen if neither of those happens.
+            Write-Success "Generated new client secret (expires $($secret.EndDateTime))."
         }
     }
 
@@ -1900,6 +1908,7 @@ LOG_LEVEL=info
             }
 
             Write-Success "Wrote env file: $envPath"
+            $secretPersisted = $true
         }
     }
 
@@ -2018,6 +2027,7 @@ LOG_LEVEL=info
                 Invoke-RestMethod -Method Post -Uri "$InstanceUrl/api/onboarding/pair" -Body $pairingBody -ContentType "application/json" | Out-Null
                 Write-Success "Paired with $InstanceUrl - it will restart momentarily with these credentials."
                 $paired = $true
+                $secretPersisted = $true
             }
             catch {
                 # $_.Exception.Message alone is usually just ".NET's generic
@@ -2047,6 +2057,79 @@ LOG_LEVEL=info
                     Write-WarningMessage "Server response: $serverMessage"
                 }
                 Write-WarningMessage "The app registration above was still created successfully. Re-run with the same -InstanceUrl/-PairingToken to retry pairing, or configure the instance manually with the .env values above."
+            }
+        }
+    }
+
+    # ------------------------------------------------------------
+    # Secret hygiene: scrub the local copy, retire old secrets
+    # ------------------------------------------------------------
+
+    if ($secret -and $paired -and $envPath -and (Test-Path $envPath)) {
+        # The paired instance now holds the credential in its own database,
+        # so the copy step [14/15] wrote to this machine is just a second
+        # place to steal it from. Blank all three together - the app treats
+        # ENTRA_TENANT_ID/CLIENT_ID/CLIENT_SECRET as set together or not at
+        # all, and falls back to the paired values when they're empty.
+        try {
+            foreach ($key in @("ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET")) {
+                Set-EnvFileValue -Path $envPath -Key $key -Value ""
+            }
+            Write-Success "Removed the Entra credentials from $envPath (the paired instance holds them now)."
+        }
+        catch {
+            Write-WarningMessage "Could not scrub $envPath - delete it, or blank its ENTRA_* lines, by hand: $($_.Exception.Message)"
+        }
+    }
+
+    if ($secret -and -not $secretPersisted) {
+        # Neither the env file nor pairing took the new secret (e.g. the
+        # env-file write was declined at a -Confirm prompt). Entra ID never
+        # returns a secret's value again, so this is the last chance to see it.
+        Write-Host ""
+        Write-Host "    ===== COPY THIS SECRET NOW - it was not saved anywhere =====" -ForegroundColor Red
+        Write-Host "    Client ID:     $($app.AppId)" -ForegroundColor Yellow
+        Write-Host "    Client Secret: $($secret.SecretText)" -ForegroundColor Yellow
+        Write-Host "    Expires:       $($secret.EndDateTime)" -ForegroundColor Yellow
+        Write-Host "    ============================================================" -ForegroundColor Red
+        if ($transcriptPath) {
+            Write-WarningMessage "The secret above is also in the transcript at $transcriptPath - delete that file once you've copied it."
+        }
+    }
+
+    if ($secret) {
+        $olderSecrets = @(
+            $existingPasswordCredentials |
+                Where-Object { $_.DisplayName -like "PatchPilot-Deploy-*" -and $_.KeyId -ne $secret.KeyId }
+        )
+        if ($olderSecrets.Count -gt 0) {
+            $olderList = ($olderSecrets | ForEach-Object { "$($_.DisplayName) (expires $($_.EndDateTime))" }) -join ", "
+            if ($paired) {
+                # Safe to retire the old ones only once the instance actually
+                # holds the new one - otherwise this would cut off a running
+                # instance still using an older secret.
+                $revokeQuery = "The paired instance now uses the new secret. Revoke the $($olderSecrets.Count) older PatchPilot client secret(s) on app $($app.AppId)? $olderList. " +
+                    "Anything else still using one of them (e.g. another instance sharing this app registration) will stop authenticating."
+                if ($RevokeOldClientSecrets -or $PSCmdlet.ShouldContinue($revokeQuery, "Revoke older client secrets?")) {
+                    foreach ($old in $olderSecrets) {
+                        if ($PSCmdlet.ShouldProcess("$($app.AppId) / $($old.DisplayName)", "Remove password credential")) {
+                            try {
+                                Remove-MgApplicationPassword -ApplicationId $app.Id -KeyId $old.KeyId -ErrorAction Stop
+                                Write-Success "Revoked old client secret $($old.DisplayName)."
+                            }
+                            catch {
+                                Write-WarningMessage "Could not revoke $($old.DisplayName): $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                }
+                else {
+                    Write-WarningMessage "Kept $($olderSecrets.Count) older client secret(s). Revoke them in Entra ID (App registrations -> $($app.AppId) -> Certificates & secrets) once nothing uses them."
+                }
+            }
+            else {
+                Write-WarningMessage "App $($app.AppId) still has $($olderSecrets.Count) older client secret(s): $olderList."
+                Write-WarningMessage "Once your instance is restarted on the new secret, revoke them in Entra ID (App registrations -> $($app.AppId) -> Certificates & secrets)."
             }
         }
     }
@@ -2118,8 +2201,9 @@ LOG_LEVEL=info
     }
     Write-Host ""
     Write-Host "  Next:" -ForegroundColor Yellow
-    Write-Host "    1. If a new client secret was generated, copy it now."
-    Write-Host "    2. Review .env or .env.generated if written."
+    Write-Host "    1. If a new client secret was shown above (not saved anywhere), copy it now."
+    Write-Host "    2. Review .env or .env.generated if written. Merge .env.generated into .env and"
+    Write-Host "       delete it - don't leave a second copy of the client secret on disk."
     Write-Host "    3. Run docker compose up -d from the PatchPilot repo."
     if (-not $homeConsentGranted) {
         Write-Host "    4. Open the consent URL above as a Global Administrator to authorize PatchPilot."

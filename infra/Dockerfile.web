@@ -6,12 +6,12 @@ RUN corepack enable
 
 WORKDIR /app
 
-COPY pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/web/package.json apps/web/
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile=false --filter @patchpilot/web...
+    pnpm install --frozen-lockfile --filter @patchpilot/web...
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web

@@ -9,7 +9,7 @@ RUN corepack enable
 WORKDIR /app
 
 # Copy manifests first for layer caching.
-COPY pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/graph/package.json packages/graph/
@@ -21,7 +21,7 @@ COPY apps/api/package.json apps/api/
 # "dependencies" (not devDependencies) precisely so --prod keeps it: the CMD
 # below runs the app through it directly.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile=false --filter @patchpilot/api...
+    pnpm install --prod --frozen-lockfile --filter @patchpilot/api...
 
 # Copy sources. apps/api depends on both of these directly (see its
 # package.json) — omitting either one fails pnpm's workspace resolution
