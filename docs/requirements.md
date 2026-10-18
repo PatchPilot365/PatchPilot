@@ -67,7 +67,7 @@ Only relevant if you're self-hosting via
 provisions all of this automatically.
 
 - **Docker and Docker Compose** on the host that runs PatchPilot365.
-- **Node.js 24+** and **pnpm 9+** if you're building/running outside the
+- **Node.js 24+** and **pnpm 10+** if you're building/running outside the
   provided Docker images (contributor/development workflows).
 - **PostgreSQL** and **Redis** — provisioned automatically by the Docker
   Compose files; no manual setup needed if you use them as shipped.

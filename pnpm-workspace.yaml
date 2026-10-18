@@ -1,3 +1,19 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# pnpm 10 runs no dependency install scripts unless they're listed here.
+# esbuild (Vite/tsx bundler) and msgpackr-extract (BullMQ's optional native
+# msgpack speed-up) are the only ones this workspace needs.
+onlyBuiltDependencies:
+  - esbuild
+  - msgpackr-extract
+
+# Fail the install, instead of just warning, when a new dependency brings an
+# install script that isn't approved above - so one can't slip in unnoticed.
+strictDepBuilds: true
+
+# Only resolve versions published at least 3 days ago (in minutes). Most
+# malicious npm releases are caught and pulled within hours. Applies when
+# adding or updating dependencies; --frozen-lockfile installs are unaffected.
+minimumReleaseAge: 4320

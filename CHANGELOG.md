@@ -12,6 +12,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: upgraded to pnpm 10 (pinned to 10.34.6 with an integrity hash in
+  `packageManager`). Dependency install scripts now run only for an explicit
+  allowlist (`esbuild`, `msgpackr-extract`), and an install fails if a new
+  dependency brings an unapproved install script. When adding or updating
+  dependencies, pnpm only picks versions published at least 3 days ago.
+  Building from source now needs pnpm 10 or later (`corepack enable` picks up
+  the pinned version automatically).
+
 - Security: the Caddy container now gets only `PP_DOMAIN` instead of the
   whole `.env`, so the internet-facing proxy no longer holds the Entra client
   secret or the token encryption key.

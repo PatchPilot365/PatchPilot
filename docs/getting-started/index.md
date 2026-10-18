@@ -14,7 +14,7 @@ complete path later.
 | --- | --- | --- |
 | [Azure Deployment]({{ "/getting-started/azure-deploy/" | relative_url }}) | An Azure subscription | The primary, supported way to run PatchPilot365 for real, without hand-provisioning a server yourself. |
 | [Manual Deployment]({{ "/getting-started/manual-deployment/" | relative_url }}) | Your own Azure subscription, on-prem hardware, or a third-party host + Docker | Self-hosting on infrastructure you provision and manage yourself. |
-| [Demo Mode]({{ "/getting-started/demo-mode/" | relative_url }}) | A running instance (or Node 24+/pnpm 9+ for local dev) | Clicking through the console with fictional data — no real tenant. |
+| [Demo Mode]({{ "/getting-started/demo-mode/" | relative_url }}) | A running instance (or Node 24+/pnpm 10+ for local dev) | Clicking through the console with fictional data — no real tenant. |
 
 Every path that connects a real tenant ends the same way: the
 [pairing step]({{ "/getting-started/pairing/" | relative_url }}), where a
