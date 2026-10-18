@@ -12,6 +12,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Added: after a successful pairing, the pairing script lists every client
+  secret or certificate on the app registration that the instance doesn't
+  use, including ones added by hand in the Entra portal, and offers to remove
+  them. The prompt defaults to No, and `-RevokeOldClientSecrets` doesn't
+  answer it, since a credential the script didn't create may belong to
+  something else. Before this, only credentials named `PatchPilot-Deploy-*`
+  were ever offered for removal.
 - Added: an instance on an Azure VM can authenticate to Entra with the VM's
   managed identity, so it stores no credential at all. Run the pairing script
   with `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`;

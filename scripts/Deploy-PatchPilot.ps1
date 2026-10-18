@@ -99,6 +99,8 @@ param(
     # After a new client secret has been handed to the instance (pairing
     # succeeded), revoke every older PatchPilot-Deploy-* secret on the app
     # registration without prompting. Without this switch the script asks.
+    # Credentials with any other name are offered separately, always with a
+    # prompt - this switch never removes them.
     [Parameter(Mandatory = $false)]
     [switch] $RevokeOldClientSecrets,
 
@@ -2394,6 +2396,96 @@ LOG_LEVEL=info
             else {
                 Write-WarningMessage "App $($app.AppId) still has $($olderSecrets.Count) older client secret(s): $olderList."
                 Write-WarningMessage "Once your instance is restarted on the new secret, revoke them in Entra ID (App registrations -> $($app.AppId) -> Certificates & secrets)."
+            }
+        }
+    }
+
+    if ($paired) {
+        # The two steps above only consider credentials named
+        # PatchPilot-Deploy-*, the names this script gives them. A secret or
+        # certificate added by hand in the Entra portal (or by anything else)
+        # never matches, so it would stay on the app indefinitely. List every
+        # credential the paired instance doesn't use, whatever its name, and
+        # offer to remove it - behind its own prompt, which defaults to No and
+        # which -RevokeOldClientSecrets does not answer, because a credential
+        # this script didn't create may belong to something other than
+        # PatchPilot. PatchPilot-Deploy-* credentials the steps above already
+        # asked about are left out so a declined prompt isn't asked twice.
+        # Federated credentials (managed identity) are a separate collection
+        # and are never touched.
+        $certsHandledAbove = [bool]($certificateAdded -or $managedIdentityCredential)
+        $currentSecrets = @((Get-MgApplication -ApplicationId $app.Id -Property "passwordCredentials").PasswordCredentials)
+        $otherSecrets = @(
+            $currentSecrets | Where-Object {
+                $_ -and
+                (-not $secret -or $_.KeyId -ne $secret.KeyId) -and
+                $_.DisplayName -notlike "PatchPilot-Deploy-*"
+            }
+        )
+        $currentKeys = @(Get-AppKeyCredentials -ApplicationObjectId $app.Id)
+        $otherCerts = @(
+            $currentKeys | Where-Object {
+                (-not $certificateAdded -or $_.displayName -ne $certificateAdded.displayName) -and
+                -not ($certsHandledAbove -and $_.displayName -like "PatchPilot-Deploy-*")
+            }
+        )
+
+        if (($otherSecrets.Count + $otherCerts.Count) -gt 0) {
+            $listed = @(
+                $otherSecrets | ForEach-Object { "client secret '$($_.DisplayName)' (value starts '$($_.Hint)', expires $($_.EndDateTime))" }
+                $otherCerts | ForEach-Object { "certificate '$($_.displayName)' (expires $($_.endDateTime))" }
+            )
+            Write-WarningMessage "App $($app.AppId) has $($listed.Count) other credential(s) the paired instance doesn't use:"
+            $listed | ForEach-Object { Write-Host "      - $_" -ForegroundColor Yellow }
+
+            # PromptForChoice rather than ShouldContinue so the default can be
+            # No. A non-interactive host throws here, which also means No.
+            $removeOthers = $false
+            try {
+                $choices = [System.Management.Automation.Host.ChoiceDescription[]]@(
+                    [System.Management.Automation.Host.ChoiceDescription]::new("&Yes", "Remove every credential listed above."),
+                    [System.Management.Automation.Host.ChoiceDescription]::new("&No", "Keep them.")
+                )
+                $removeOthers = $Host.UI.PromptForChoice(
+                    "Remove credentials this instance doesn't use?",
+                    "PatchPilot didn't create these, or doesn't use them any more. Anything else that signs in as app $($app.AppId) with one of them will stop working.",
+                    $choices,
+                    1
+                ) -eq 0
+            }
+            catch {
+                $removeOthers = $false
+            }
+
+            if ($removeOthers) {
+                foreach ($old in $otherSecrets) {
+                    if ($PSCmdlet.ShouldProcess("$($app.AppId) / $($old.DisplayName)", "Remove password credential")) {
+                        try {
+                            Remove-MgApplicationPassword -ApplicationId $app.Id -KeyId $old.KeyId -ErrorAction Stop
+                            Write-Success "Revoked client secret '$($old.DisplayName)'."
+                        }
+                        catch {
+                            Write-WarningMessage "Could not revoke '$($old.DisplayName)': $($_.Exception.Message)"
+                        }
+                    }
+                }
+                if ($otherCerts.Count -gt 0) {
+                    # Same replace-the-collection mechanics as the steps above.
+                    $otherKeyIds = @($otherCerts | ForEach-Object { $_.keyId })
+                    $keep = @($currentKeys | Where-Object { $otherKeyIds -notcontains $_.keyId })
+                    if ($PSCmdlet.ShouldProcess($app.AppId, "Remove $($otherCerts.Count) certificate credential(s)")) {
+                        try {
+                            Set-AppKeyCredentials -ApplicationObjectId $app.Id -KeyCredentials $keep
+                            Write-Success "Removed $($otherCerts.Count) certificate(s)."
+                        }
+                        catch {
+                            Write-WarningMessage "Could not remove the certificates: $($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+            else {
+                Write-WarningMessage "Kept them. Remove them in Entra ID (App registrations -> $($app.AppId) -> Certificates & secrets) once you're sure nothing uses them."
             }
         }
     }
