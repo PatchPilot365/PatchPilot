@@ -136,23 +136,26 @@ log lines. Full technical detail on the Azure template lives in
 [`infra/azure/README.md`](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md)
 in the repository.
 
-## Optional: managed identity or Key Vault
+## Managed identity, and optional Key Vault
 
 The VM is created with a system-assigned managed identity that holds no
-roles and is unused unless you opt in. Two options build on it:
+roles. When you download the pairing script from the instance, it detects
+that identity and the script pairs with it by default, so the instance
+stores no credential at all. There's nothing extra to run. This needs the
+VM in a subscription whose directory is your MSP tenant. If it isn't, the
+script says so and pairs with the instance's own certificate instead.
 
-- **Pair with the managed identity**, so the instance stores no credential
-  at all: run the pairing script with
-  `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`.
-  The VM must be in a subscription whose directory is your MSP tenant.
-- **Keep the app's certificate or client secret in Azure Key Vault**, read
-  with the VM's identity. A Key Vault certificate's private key never leaves
-  the vault.
+Optionally, you can instead keep the app's certificate or client secret in
+**Azure Key Vault**, read with the VM's identity. A Key Vault certificate's
+private key never leaves the vault. Key Vault only works on an Azure VM,
+because the instance reaches the vault with the VM's managed identity.
 
 Both are covered step by step in
 [`infra/azure/README.md`](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md#authenticate-with-the-vms-managed-identity).
-Neither has been verified against a live Azure deployment yet, so the
-default instance-generated certificate is the tested path.
+Neither has been verified against a live Azure deployment yet. If pairing
+with the managed identity misbehaves, run the script with
+`-CredentialType Certificate` to use the tested instance-generated
+certificate.
 
 ## Next step
 

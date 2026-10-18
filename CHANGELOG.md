@@ -12,6 +12,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Changed: a pairing script downloaded from an instance on an Azure VM now
+  pairs with the VM's managed identity automatically. The instance detects
+  the identity and pre-fills it, so there's no `principalId` to look up. If
+  the VM's subscription is in a different directory from the MSP tenant,
+  the script says so and uses the instance's certificate instead.
+  `-CredentialType Certificate` still forces the certificate. Off Azure,
+  nothing changes.
 - Added: an instance on an Azure VM can authenticate to Entra with the VM's
   managed identity, so it stores no credential at all. Run the pairing script
   with `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`;

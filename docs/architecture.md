@@ -79,11 +79,15 @@ stolen refresh token from being redeemed anywhere else.
 - **Client secret.** Still supported for instances that paired before
   certificates, or when you choose it. A secret can be copied and used from
   anywhere, so it's the least protective option.
-- **Azure only, opt-in:** the VM's **managed identity**, registered on the
-  app as a federated credential, so nothing is stored on the instance at
-  all; or a certificate or secret kept in **Azure Key Vault**, where a Key
-  Vault certificate's key never leaves the vault. Neither has been verified
-  against a live Azure deployment yet.
+- **Azure VM, by default:** the VM's **managed identity**, registered on
+  the app as a federated credential, so nothing is stored on the instance
+  at all. The pairing script uses it automatically when the instance finds
+  one in the MSP tenant.
+- **Azure VM, opt-in:** a certificate or secret kept in **Azure Key
+  Vault**, where a Key Vault certificate's key never leaves the vault. The
+  vault is reached with the VM's managed identity, so this doesn't work off
+  Azure. Neither Azure option has been verified against a live Azure
+  deployment yet.
 
 The renewable credential an overnight schedule relies on is an engineer's
 refresh token, cached in Redis. Each cache entry is encrypted and bound to
@@ -224,9 +228,11 @@ Two networks matter, and only one is under the MSP's control:
 
 - **PatchPilot365's own server** needs outbound access to the two Microsoft
   API hosts above, plus `login.microsoftonline.com` for auth. On Azure with
-  the managed identity or Key Vault options, it also needs the VM's
-  instance metadata endpoint (`169.254.169.254`) and the vault's own host
-  (`<vault-name>.vault.azure.net`).
+  the managed identity it also needs the VM's instance metadata endpoint
+  (`169.254.169.254`), and with Key Vault the vault's own host
+  (`<vault-name>.vault.azure.net`). Off Azure, a pairing-script download
+  makes one short (2-second) attempt to reach that metadata endpoint and
+  moves on.
 - **Every managed device** needs its own outbound access for the Defender
   sensor and the Intune Management Extension — this is usually the network
   a remediation job actually stalls or fails on, not PatchPilot365's server.

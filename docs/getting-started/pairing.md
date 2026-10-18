@@ -58,9 +58,11 @@ To pair with a client secret instead (the older behavior), run the script
 with `-CredentialType Secret`. Running the script from a git clone, rather than
 as a download from your instance, always uses a client secret.
 
-An instance on an Azure VM can pair with the VM's managed identity instead, so
-it stores no credential at all: run the script with
-`-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`. See
+An instance on an Azure VM detects the VM's managed identity, and its script
+pairs with that by default instead, so it stores no credential at all. That
+needs the VM's subscription to be in your MSP tenant; otherwise the script
+falls back to the certificate. Run it with `-CredentialType Certificate` to
+choose the certificate yourself. See
 [Deploying to an Azure VM](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md#authenticate-with-the-vms-managed-identity).
 
 ## Steps

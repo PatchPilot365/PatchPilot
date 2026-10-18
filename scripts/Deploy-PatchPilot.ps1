@@ -32,9 +32,10 @@
     .\Deploy-PatchPilot.ps1 -CredentialType Secret
 
 .EXAMPLE
-    # PatchPilot on an Azure VM (infra/azure): pair with the VM's managed
-    # identity, so the instance stores no credential at all. Use the
-    # principalId the Azure deployment outputs.
+    # PatchPilot on an Azure VM (infra/azure): a personalized download from
+    # the instance detects the VM's managed identity and pairs with it by
+    # default, so the instance stores no credential at all. To name the
+    # identity yourself (e.g. a user-assigned one), pass its object ID:
     .\Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity -ManagedIdentityObjectId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 .EXAMPLE
@@ -134,10 +135,12 @@ param(
     [string] $PairingToken = "{{PAIRING_TOKEN}}",
 
     # How the paired instance authenticates to Entra. "Auto" (default) uses
-    # the instance-generated certificate when this is a personalized
-    # download that carries one (see $CertificateBase64 below), otherwise a
-    # client secret - so a self-hoster running this file from a git clone
-    # gets exactly the old behavior. "Secret" forces a client secret even
+    # the VM's managed identity when the instance detected one in the MSP
+    # tenant (see $DetectedManagedIdentityObjectId below), else the
+    # instance-generated certificate when this is a personalized download
+    # that carries one (see $CertificateBase64 below), otherwise a client
+    # secret - so a self-hoster running this file from a git clone gets
+    # exactly the old behavior. "Secret" forces a client secret even
     # when a certificate is available. A certificate is preferred because
     # the private key never leaves the instance: nothing replayable is
     # created in Entra, sent over the network, or written to disk here.
@@ -151,7 +154,8 @@ param(
     # -CredentialType ManagedIdentity only: the object (principal) ID of the
     # Azure VM's managed identity - the principalId output of
     # infra/azure/main.bicep for its system-assigned identity. The identity
-    # must live in the MSP tenant this app registration is in.
+    # must live in the MSP tenant this app registration is in. Optional on a
+    # personalized download from an Azure VM, which detected it already.
     [Parameter(Mandatory = $false)]
     [string] $ManagedIdentityObjectId,
 
@@ -165,7 +169,22 @@ param(
     # pairing; its private key stays on the instance. Template placeholder,
     # substituted on a personalized download like $PairingToken above.
     [Parameter(Mandatory = $false)]
-    [string] $CertificateBase64 = "{{CERTIFICATE_BASE64}}"
+    [string] $CertificateBase64 = "{{CERTIFICATE_BASE64}}",
+
+    # The managed identity the instance found on its own Azure VM: object
+    # ID, tenant, and (user-assigned only) client ID. Template placeholders
+    # like $CertificateBase64 above, substituted on a personalized download
+    # only when the instance runs on Azure with a managed identity. Kept
+    # apart from -ManagedIdentityObjectId/-ManagedIdentityClientId so an
+    # explicit choice always wins over what was detected.
+    [Parameter(Mandatory = $false)]
+    [string] $DetectedManagedIdentityObjectId = "{{MANAGED_IDENTITY_OBJECT_ID}}",
+
+    [Parameter(Mandatory = $false)]
+    [string] $DetectedManagedIdentityTenantId = "{{MANAGED_IDENTITY_TENANT_ID}}",
+
+    [Parameter(Mandatory = $false)]
+    [string] $DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"
 )
 
 $ErrorActionPreference = "Stop"
@@ -991,6 +1010,43 @@ $certificateAdded = $null
 # to be told to use it, and there is no credential for a local .env.
 $useManagedIdentity = $CredentialType -eq "ManagedIdentity"
 $guidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+# What the instance detected on its own Azure VM, if anything (see the
+# $DetectedManagedIdentityObjectId param comment). Un-substituted
+# placeholders, or anything that isn't a GUID, mean "nothing detected".
+$detectedIdentity = $null
+if ($pairingRequested -and $DetectedManagedIdentityObjectId -match $guidPattern -and $DetectedManagedIdentityTenantId -match $guidPattern) {
+    $detectedIdentity = [pscustomobject]@{
+        ObjectId = $DetectedManagedIdentityObjectId
+        TenantId = $DetectedManagedIdentityTenantId
+        ClientId = if ($DetectedManagedIdentityClientId -match $guidPattern) { $DetectedManagedIdentityClientId } else { $null }
+    }
+}
+# The federated credential trusts identities issued by the MSP tenant (see
+# $ficIssuer below), so a VM whose subscription sits in another directory -
+# e.g. a separate pay-as-you-go tenant - can't be used; fall back to the
+# certificate rather than register a credential that would never work.
+$detectedIdentityUsable = $detectedIdentity -and $detectedIdentity.TenantId -eq $MspTenantId
+if ($CredentialType -eq "Auto" -and $detectedIdentity) {
+    if ($detectedIdentityUsable) {
+        $useManagedIdentity = $true
+        $useCertificate = $false
+        $ManagedIdentityObjectId = $detectedIdentity.ObjectId
+        $ManagedIdentityClientId = $detectedIdentity.ClientId
+        Write-Host "Azure managed identity $($detectedIdentity.ObjectId) detected on the PatchPilot VM - pairing with it, so no credential is stored. Pass -CredentialType Certificate to use a certificate instead." -ForegroundColor DarkGray
+    }
+    else {
+        Write-Warning "The PatchPilot VM's managed identity is in tenant $($detectedIdentity.TenantId), not $MspTenantId, so it can't sign in as this app. Pairing with a certificate instead. To use the identity, run PatchPilot in a subscription in tenant $MspTenantId."
+    }
+}
+elseif ($useManagedIdentity -and -not $ManagedIdentityObjectId -and $detectedIdentity) {
+    if (-not $detectedIdentityUsable) {
+        throw "The PatchPilot VM's managed identity is in tenant $($detectedIdentity.TenantId), not $MspTenantId, so it can't sign in as this app. Pass -CredentialType Certificate, or -ManagedIdentityObjectId for an identity in tenant $MspTenantId."
+    }
+    $ManagedIdentityObjectId = $detectedIdentity.ObjectId
+    if (-not $ManagedIdentityClientId) { $ManagedIdentityClientId = $detectedIdentity.ClientId }
+}
+
 if ($useManagedIdentity) {
     if (-not $pairingRequested) {
         throw "-CredentialType ManagedIdentity needs a personalized download from your PatchPilot instance (Setup -> App Registration), which carries a pairing token."

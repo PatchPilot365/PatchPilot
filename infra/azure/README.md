@@ -106,40 +106,42 @@ HTTPS. Complete setup via the onboarding pairing flow described in the main
 
 ## Authenticate with the VM's managed identity
 
-Optional. By default the instance pairs with a certificate it generates
-itself. On Azure it can instead authenticate to Entra as the VM's
-system-assigned managed identity, so it stores no credential at all. The
-deployment creates that identity and grants it nothing; it's unused until you
-opt in.
-
-1. Get the identity's object ID (also shown as the deployment's
-   `principalId` output):
-
-   ```bash
-   az vm show -g patchpilot-rg -n patchpilot-vm --query identity.principalId -o tsv
-   ```
-
-2. Download the pairing script from the instance (Setup → App Registration)
-   and run it with:
-
-   ```powershell
-   .\Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>
-   ```
-
-   The script adds a federated identity credential for that identity to the
-   app registration, and the instance asks Azure for the identity's token
-   whenever it needs to authenticate.
+This is automatic. The deployment gives the VM a system-assigned managed
+identity and grants it nothing. When you download the pairing script from the
+instance, the instance finds that identity and pre-fills it into the script,
+which then pairs with it instead of a certificate. The script adds a
+federated identity credential for the identity to the app registration, and
+the instance asks Azure for the identity's token whenever it needs to
+authenticate. Nothing is stored on the VM.
 
 The VM must be in a subscription whose directory is your MSP tenant, the
-same tenant as the app registration. A user-assigned identity also works:
-attach it to the VM, pass its object ID, and add
-`-ManagedIdentityClientId <its client ID>`.
+same tenant as the app registration. If it isn't, the script says so and
+pairs with the instance's own certificate instead.
+
+To override what was detected:
+
+- **Use the certificate anyway:** run the script with
+  `-CredentialType Certificate`.
+- **Name the identity yourself:** run it with
+  `-CredentialType ManagedIdentity -ManagedIdentityObjectId <object ID>`.
+  The system-assigned identity's object ID is the deployment's `principalId`
+  output, or:
+
+  ```bash
+  az vm show -g patchpilot-rg -n patchpilot-vm --query identity.principalId -o tsv
+  ```
+
+- **A user-assigned identity:** attach it to the VM and set
+  `ENTRA_MANAGED_IDENTITY_CLIENT_ID=<its client ID>` in `.env` before
+  downloading the script, and it's detected the same way. You can also pass
+  its object ID and `-ManagedIdentityClientId <its client ID>` by hand.
 
 ## Keep the credential in Key Vault
 
-Optional, and separate from the managed identity option above. If you'd rather
+Optional, and an alternative to the managed identity above. If you'd rather
 pair with a secret or certificate but keep it in Azure Key Vault, the instance
-can read it with the VM's managed identity:
+can read it with the VM's managed identity. This only works on an Azure VM:
+off Azure there is no managed identity to reach the vault with.
 
 - **Certificate** (recommended): create or import an RSA certificate in the
   vault with a non-exportable key, upload its public part to the app

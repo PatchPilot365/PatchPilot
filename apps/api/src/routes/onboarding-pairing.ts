@@ -7,6 +7,7 @@ import { z } from "zod";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db, tables } from "@patchpilot/db";
 import { encrypt, sha256Hex, auditSafe, generateSelfSignedCertificate } from "@patchpilot/graph";
+import { detectManagedIdentity } from "@patchpilot/graph/keyvault";
 import { SYSTEM_ACTORS, can, CREDENTIALS_ROTATED_CHANNEL, currentScopeBaseline } from "@patchpilot/shared";
 import { config } from "../config.js";
 import { connection } from "../queue.js";
@@ -331,6 +332,14 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       thumbprintSha256: certificate.thumbprintSha256,
     });
 
+    // On an Azure VM, pre-fill the script with this VM's managed identity so
+    // it pairs with that (nothing stored anywhere) instead of the
+    // certificate above, which stays in the script as the fallback. The
+    // script only uses it when the identity's tenant is the one it pairs
+    // in. Off Azure this is a fast, cached miss and the script is unchanged.
+    const managedIdentityClientId = config.ENTRA_MANAGED_IDENTITY_CLIENT_ID || undefined;
+    const managedIdentity = await detectManagedIdentity({ clientId: managedIdentityClientId });
+
     // Strip a leading UTF-8 BOM defensively (node's readFileSync("utf8") does
     // not do this itself, unlike PowerShell's own .ps1 file loader). A BOM
     // survives harmlessly when this script is downloaded and run as a file,
@@ -360,6 +369,14 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       .replace(
         /\{\{CERTIFICATE_BASE64\}\}/g,
         certificate.certificatePem.replace(/-----[A-Z ]+-----|\s/g, ""),
+      )
+      // Left as placeholders when no managed identity was detected; the
+      // script treats those as "not supplied".
+      .replace(/\{\{MANAGED_IDENTITY_OBJECT_ID\}\}/g, managedIdentity?.objectId ?? "{{MANAGED_IDENTITY_OBJECT_ID}}")
+      .replace(/\{\{MANAGED_IDENTITY_TENANT_ID\}\}/g, managedIdentity?.tenantId ?? "{{MANAGED_IDENTITY_TENANT_ID}}")
+      .replace(
+        /\{\{MANAGED_IDENTITY_CLIENT_ID\}\}/g,
+        managedIdentity && managedIdentityClientId ? managedIdentityClientId : "{{MANAGED_IDENTITY_CLIENT_ID}}",
       );
 
     await auditSafe({
@@ -368,7 +385,7 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       method: "GET",
       action: "onboarding:pairing-token-issued",
       resourceType: "application",
-      summary: `Pairing script downloaded (expires ${expiresAt.toISOString()})`,
+      summary: `Pairing script downloaded (expires ${expiresAt.toISOString()})${managedIdentity ? ", Azure managed identity detected" : ""}`,
       outcome: "success",
       responseStatus: 200,
     });

@@ -7,14 +7,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * following domains.test.ts's harness: `@patchpilot/db` mocked with an
  * in-memory, table-keyed store, drizzle's predicate builders swapped for
  * plain-object ones so the single-use token UPDATE really narrows to one
- * row, and every outward boundary (audit, Redis publish, process exit) mocked.
+ * row, and every outward boundary (audit, Redis publish, process exit, the
+ * Azure managed identity probe) mocked.
  */
 
-const { tableRows, auditSafeMock, publishMock, exitAfterReplyMock } = vi.hoisted(() => ({
+const { tableRows, auditSafeMock, publishMock, exitAfterReplyMock, detectManagedIdentityMock } = vi.hoisted(() => ({
   tableRows: new Map<unknown, Record<string, unknown>[]>(),
   auditSafeMock: vi.fn(),
   publishMock: vi.fn(),
   exitAfterReplyMock: vi.fn(),
+  detectManagedIdentityMock: vi.fn(),
 }));
 
 type Row = Record<string, unknown>;
@@ -115,6 +117,8 @@ vi.mock("@patchpilot/graph", async (importOriginal) => {
   return { ...actual, auditSafe: auditSafeMock };
 });
 
+vi.mock("@patchpilot/graph/keyvault", () => ({ detectManagedIdentity: detectManagedIdentityMock }));
+
 vi.mock("../queue.js", () => ({ connection: { publish: publishMock } }));
 vi.mock("../restart-after-reply.js", () => ({ exitAfterReply: exitAfterReplyMock }));
 
@@ -162,6 +166,7 @@ beforeEach(() => {
   auditSafeMock.mockReset();
   publishMock.mockReset().mockResolvedValue(1);
   exitAfterReplyMock.mockReset();
+  detectManagedIdentityMock.mockReset().mockResolvedValue(null);
 });
 
 describe("GET /api/onboarding/pairing-script", () => {
@@ -185,6 +190,47 @@ describe("GET /api/onboarding/pairing-script", () => {
         .export({ type: "spki", format: "der" })
         .equals(cert.publicKey.export({ type: "spki", format: "der" })),
     ).toBe(true);
+  });
+
+  it("leaves the managed identity placeholders alone off Azure", async () => {
+    const app = await buildApp();
+    const { script, certificateBase64 } = await downloadScript(app);
+    expect(script).toContain('$DetectedManagedIdentityObjectId = "{{MANAGED_IDENTITY_OBJECT_ID}}"');
+    expect(script).toContain('$DetectedManagedIdentityTenantId = "{{MANAGED_IDENTITY_TENANT_ID}}"');
+    expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
+    expect(certificateBase64).not.toMatch(/^\{\{/);
+    expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId: undefined });
+  });
+
+  it("pre-fills the VM's managed identity on Azure, keeping the certificate as the fallback", async () => {
+    const objectId = "a0000000-0000-4000-8000-000000000001";
+    const tenantId = "b0000000-0000-4000-8000-000000000002";
+    detectManagedIdentityMock.mockResolvedValue({ objectId, tenantId });
+    const app = await buildApp();
+    const { script, certificateBase64 } = await downloadScript(app);
+    expect(script).toContain(`$DetectedManagedIdentityObjectId = "${objectId}"`);
+    expect(script).toContain(`$DetectedManagedIdentityTenantId = "${tenantId}"`);
+    // System-assigned: no client ID to pass on.
+    expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
+    expect(certificateBase64).not.toMatch(/^\{\{/);
+    expect(auditSafeMock.mock.calls[0]![0].summary).toContain("Azure managed identity detected");
+  });
+
+  it("probes for and passes on a configured user-assigned identity", async () => {
+    const clientId = "c0000000-0000-4000-8000-000000000003";
+    detectManagedIdentityMock.mockResolvedValue({
+      objectId: "a0000000-0000-4000-8000-000000000001",
+      tenantId: "b0000000-0000-4000-8000-000000000002",
+    });
+    Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: clientId });
+    try {
+      const app = await buildApp();
+      const { script } = await downloadScript(app);
+      expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId });
+      expect(script).toContain(`$DetectedManagedIdentityClientId = "${clientId}"`);
+    } finally {
+      Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: "" });
+    }
   });
 
   it("leaves the tenant ID as a placeholder while unpaired", async () => {
