@@ -1,6 +1,6 @@
 import { createDecipheriv, createHmac } from "node:crypto";
 import { unzipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildIntuneWinPackage, type BuildIntuneWinPackageResult } from "./intunewin.js";
 
 /** Mirrors what a real Intune content-upload caller does after fetching `fileEncryptionInfo`
@@ -58,8 +58,19 @@ describe("buildIntuneWinPackage", () => {
 
   it("produces independent random keys/IVs across builds of identical content", () => {
     const files = [{ name: "a.ps1", content: Buffer.from("same content") }];
-    const a = buildIntuneWinPackage({ files, setupFileName: "a.ps1" });
-    const b = buildIntuneWinPackage({ files, setupFileName: "a.ps1" });
+    // fflate stamps each zip entry with the current time (2-second DOS
+    // resolution), so two builds straddling a tick would zip differently and
+    // break the digest assertion below. Pin the clock for both builds.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    let a: BuildIntuneWinPackageResult;
+    let b: BuildIntuneWinPackageResult;
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      a = buildIntuneWinPackage({ files, setupFileName: "a.ps1" });
+      b = buildIntuneWinPackage({ files, setupFileName: "a.ps1" });
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(a.encryptionInfo.encryptionKey).not.toBe(b.encryptionInfo.encryptionKey);
     expect(a.encryptionInfo.initializationVector).not.toBe(b.encryptionInfo.initializationVector);
