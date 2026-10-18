@@ -135,6 +135,7 @@ vi.mock("../config.js", async (importOriginal) => {
 
 const { onboardingPairingRoutes } = await import("./onboarding-pairing.js");
 const { tables } = await import("@patchpilot/db");
+const { config } = await import("../config.js");
 const { decrypt, sha256Hex } = await import("@patchpilot/graph");
 
 async function buildApp() {
@@ -184,6 +185,29 @@ describe("GET /api/onboarding/pairing-script", () => {
         .export({ type: "spki", format: "der" })
         .equals(cert.publicKey.export({ type: "spki", format: "der" })),
     ).toBe(true);
+  });
+
+  it("leaves the tenant ID as a placeholder while unpaired", async () => {
+    const app = await buildApp();
+    const { script } = await downloadScript(app);
+    expect(script).toContain('[string] $MspTenantId = "{{MSP_TENANT_ID}}"');
+  });
+
+  it("defaults the tenant ID to this instance's own once paired", async () => {
+    const tenantId = "f0000000-0000-4000-8000-000000000001";
+    Object.assign(config, { ENTRA_CONFIGURED: true, ENTRA_TENANT_ID: tenantId });
+    try {
+      const app = Fastify();
+      app.decorateRequest("currentUser", null as unknown as never);
+      app.addHook("onRequest", async (req) => {
+        req.currentUser = { upn: "admin@example.com", role: "admin" } as never;
+      });
+      await app.register(onboardingPairingRoutes);
+      const { script } = await downloadScript(app);
+      expect(script).toContain(`[string] $MspTenantId = "${tenantId}"`);
+    } finally {
+      Object.assign(config, { ENTRA_CONFIGURED: false, ENTRA_TENANT_ID: undefined });
+    }
   });
 });
 

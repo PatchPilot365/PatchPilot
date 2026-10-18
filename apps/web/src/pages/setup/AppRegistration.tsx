@@ -14,6 +14,7 @@ import {
   GRAPH_WRITE_GATED_SCOPES,
   DEFENDER_WRITE_GATED_SCOPES,
   type EntraCredentialSummary,
+  type EntraCredentialType,
 } from "@patchpilot/shared";
 import { Card, PageHeader, CopyButton } from "../../components/ui";
 import { ScopeList } from "../../components/ScopeList";
@@ -1143,30 +1144,52 @@ const CERTIFICATE_WARNING_DAYS = 30;
  * instance, so the only thing to watch is its expiry; a client secret is the
  * legacy / self-hosted .env path.
  */
+/**
+ * Each credential type's badge, coloured by how much an attacker gains from
+ * a copy of the instance's disk or database: a client secret is a bearer
+ * string usable from anywhere (highest risk); a certificate's private key
+ * still lives on the instance, but nothing replayable is stored in Entra or
+ * sent over the network (moderate). Key Vault and managed identity will slot
+ * in below these as lower-risk options.
+ */
+const CREDENTIAL_BADGES: Record<EntraCredentialType, { label: string; risk: string; className: string }> = {
+  secret: {
+    label: "Client secret",
+    risk: "Higher risk",
+    className: "bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300",
+  },
+  certificate: {
+    label: "Certificate",
+    risk: "Moderate risk",
+    className: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  },
+};
+
 function CredentialField({ credential }: { credential: EntraCredentialSummary }) {
-  const label = (
-    <div className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
-      Credential
-    </div>
-  );
-  if (credential.type === "secret") {
-    return (
-      <div className="sm:col-span-2">
-        {label}
-        <div className="mt-1 text-sm text-slate-700 dark:text-slate-200">Client secret</div>
-      </div>
-    );
-  }
+  const badge = CREDENTIAL_BADGES[credential.type];
   const expiresAt = credential.expiresAt ? new Date(credential.expiresAt) : null;
   const daysLeft = expiresAt ? Math.floor((expiresAt.getTime() - Date.now()) / 86_400_000) : null;
   const expiring = daysLeft !== null && daysLeft < CERTIFICATE_WARNING_DAYS;
   return (
     <div className="sm:col-span-2">
-      {label}
-      <div className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-        Certificate
-        {expiresAt && <>, expires {expiresAt.toLocaleDateString()}</>}
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        Credential
       </div>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}
+        >
+          {badge.label} · {badge.risk}
+        </span>
+        {expiresAt && <span>Expires {expiresAt.toLocaleDateString()}</span>}
+      </div>
+      {credential.type === "secret" && (
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          A client secret works from anywhere it&apos;s copied to. To switch to a
+          certificate, whose private key never leaves this instance, download a
+          fresh PowerShell script from Step 1 and run it again.
+        </p>
+      )}
       {credential.thumbprintSha256 && (
         <div className="mt-1 truncate font-mono text-[11px] text-slate-500 dark:text-slate-400">
           SHA-256 {credential.thumbprintSha256}

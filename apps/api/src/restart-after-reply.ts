@@ -25,7 +25,24 @@ import type { FastifyReply } from "fastify";
  * that disconnects early (or a 'finish' that never fires) can't hang the
  * process open indefinitely.
  */
+let exitPending = false;
+
+/**
+ * True once exitAfterReply has been called in this process. index.ts's
+ * restart-channel subscriber checks it: each route below publishes the
+ * restart message to every process, including this one, and this process's
+ * own copy of the message can arrive (live-observed: ~30ms) before the reply
+ * has been written. Exiting on it there drops the reply mid-flight; the
+ * client then sees a 500/network error for a write that actually succeeded.
+ * So callers schedule the exit before publishing, and this process restarts
+ * via exitAfterReply only.
+ */
+export function isExitAfterReplyPending(): boolean {
+  return exitPending;
+}
+
 export function exitAfterReply(reply: FastifyReply, opts: { drainMs?: number; fallbackMs?: number } = {}): void {
+  exitPending = true;
   const drainMs = opts.drainMs ?? 200;
   const fallbackMs = opts.fallbackMs ?? 2000;
 

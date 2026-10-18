@@ -52,8 +52,16 @@ param(
     # left for them to type. Still explicitly overridable, e.g. to target a
     # tenant other than the one the current session happens to be signed
     # into.
+    #
+    # The {{...}} default is a template placeholder (same mechanism as
+    # $RedirectUri below): a download from an instance that is already
+    # paired substitutes that instance's own tenant ID, so re-pairing never
+    # depends on auto-detection - live-observed picking up a stale Az/az
+    # login for an unrelated tenant on an admin's PC (AADSTS50020). Left
+    # un-substituted on a first pairing, where the instance doesn't know its
+    # tenant yet, and cleared right after $ErrorActionPreference below.
     [Parameter(Mandatory = $false)]
-    [string] $MspTenantId,
+    [string] $MspTenantId = "{{MSP_TENANT_ID}}",
 
     # The {{...}} default below is a template placeholder, substituted with
     # this instance's real AUTH_REDIRECT_URI on a personalized download (see
@@ -152,6 +160,12 @@ $ErrorActionPreference = "Stop"
 # against itself and always be true.
 if ($RedirectUri.StartsWith("{{") -and $RedirectUri.EndsWith("}}")) {
     $RedirectUri = "http://localhost:5173/auth/callback"
+}
+if ($MspTenantId.StartsWith("{{") -and $MspTenantId.EndsWith("}}")) {
+    $MspTenantId = $null
+}
+elseif ($MspTenantId -and -not $PSBoundParameters.ContainsKey("MspTenantId")) {
+    Write-Host "Using tenant $MspTenantId - the tenant $InstanceUrl is already paired with. Pass -MspTenantId to override." -ForegroundColor DarkGray
 }
 
 # See the $MspTenantId param comment above. Tries Get-AzContext first since
@@ -571,6 +585,61 @@ function Get-GraphAllPages {
         $nextUri = $response.'@odata.nextLink'
     }
     return @($allItems | Where-Object { $_ })
+}
+
+function Get-AppKeyCredentials {
+    <#
+        Returns the app's keyCredentials exactly as Graph's REST API returns
+        them (raw JSON objects as hashtables), for sending back unchanged in a
+        PATCH. Graph rejects a PATCH that alters an existing entry in any way
+        ("KeyNotUpdatable: Update to existing credential with KeyId '...' is
+        not allowed") - live-observed when the entries were rebuilt from
+        Get-MgApplication's typed objects with only a subset of fields
+        (customKeyIdentifier dropped). Round-tripping the raw objects
+        (key: null, everything else verbatim) is what keeps them as-is.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ApplicationObjectId
+    )
+
+    $response = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/applications/$ApplicationObjectId`?`$select=keyCredentials" -ErrorAction Stop
+    return @($response.keyCredentials | Where-Object { $_ })
+}
+
+function Set-AppKeyCredentials {
+    <#
+        PATCHes the app's whole keyCredentials collection (the only way Graph
+        offers to add or remove a certificate without proof-of-possession of
+        an existing key). Existing entries must come from
+        Get-AppKeyCredentials unchanged; any DateTime the SDK parsed is
+        written back as ISO 8601 UTC so Windows PowerShell 5.1's
+        ConvertTo-Json doesn't emit its "/Date(...)/" form.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ApplicationObjectId,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]] $KeyCredentials
+    )
+
+    $normalized = @(
+        $KeyCredentials | ForEach-Object {
+            $entry = [ordered]@{}
+            foreach ($name in $_.Keys) {
+                $value = $_[$name]
+                if ($value -is [datetime]) {
+                    $value = $value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ")
+                }
+                $entry[$name] = $value
+            }
+            $entry
+        }
+    )
+    $body = ConvertTo-Json -InputObject @{ keyCredentials = $normalized } -Depth 5
+    Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/applications/$ApplicationObjectId" -Body $body -ContentType "application/json" -ErrorAction Stop | Out-Null
 }
 
 function Test-HasEntraIdP1OrHigher {
@@ -1544,44 +1613,27 @@ try {
             }
     )
 
-    $existingKeyCredentials = @()
-    if ($current.KeyCredentials) {
-        $existingKeyCredentials = @($current.KeyCredentials)
-    }
-
     if ($useCertificate) {
         # Register the instance's public certificate as a credential on the
-        # app. Update-MgApplication replaces the whole KeyCredentials
-        # collection, so the existing entries are sent back alongside the new
-        # one (Graph keeps an existing entry matched by KeyId even though GET
-        # never returns its key bytes). Client secrets are a separate
+        # app. Graph's PATCH replaces the whole keyCredentials collection, so
+        # the existing entries are sent back, unchanged, alongside the new one
+        # - see Get-AppKeyCredentials. Client secrets are a separate
         # collection and are not touched here - see the revoke step after
         # pairing.
         $certBytes = [Convert]::FromBase64String($CertificateBase64)
         $x509 = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([byte[]]$certBytes)
         $newKeyCredential = @{
-            DisplayName   = "PatchPilot-Deploy-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
-            Type          = "AsymmetricX509Cert"
-            Usage         = "Verify"
-            Key           = $certBytes
-            StartDateTime = $x509.NotBefore.ToUniversalTime()
-            EndDateTime   = $x509.NotAfter.ToUniversalTime()
+            displayName   = "PatchPilot-Deploy-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
+            type          = "AsymmetricX509Cert"
+            usage         = "Verify"
+            key           = $CertificateBase64
+            startDateTime = $x509.NotBefore.ToUniversalTime()
+            endDateTime   = $x509.NotAfter.ToUniversalTime()
         }
-        $keyCredentials = @(
-            $existingKeyCredentials | ForEach-Object {
-                @{
-                    KeyId         = $_.KeyId
-                    DisplayName   = $_.DisplayName
-                    Type          = $_.Type
-                    Usage         = $_.Usage
-                    StartDateTime = $_.StartDateTime
-                    EndDateTime   = $_.EndDateTime
-                }
-            }
-        ) + @($newKeyCredential)
 
         if ($PSCmdlet.ShouldProcess($app.AppId, "Add certificate credential")) {
-            Update-MgApplication -ApplicationId $app.Id -KeyCredentials $keyCredentials
+            $keyCredentials = @(Get-AppKeyCredentials -ApplicationObjectId $app.Id) + @($newKeyCredential)
+            Set-AppKeyCredentials -ApplicationObjectId $app.Id -KeyCredentials $keyCredentials
             $certificateAdded = $newKeyCredential
             # SHA-256, matching what Setup -> App Registration shows.
             $certThumbprint = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($certBytes)) -replace '-', ''
@@ -2193,35 +2245,24 @@ LOG_LEVEL=info
     if ($certificateAdded -and $paired) {
         # The instance now authenticates with the new certificate, so older
         # PatchPilot certificates on the app are dead weight. Same
-        # replace-the-collection mechanics as step [7/15]: keep everything
-        # except the older PatchPilot-Deploy-* certificates.
-        $refreshedKeys = @((Get-MgApplication -ApplicationId $app.Id).KeyCredentials)
+        # replace-the-collection mechanics as step [7/15]: send back everything
+        # unchanged except the older PatchPilot-Deploy-* certificates.
+        $refreshedKeys = @(Get-AppKeyCredentials -ApplicationObjectId $app.Id)
         $olderCerts = @(
             $refreshedKeys | Where-Object {
-                $_.DisplayName -like "PatchPilot-Deploy-*" -and $_.DisplayName -ne $certificateAdded.DisplayName
+                $_.displayName -like "PatchPilot-Deploy-*" -and $_.displayName -ne $certificateAdded.displayName
             }
         )
         if ($olderCerts.Count -gt 0) {
-            $olderList = ($olderCerts | ForEach-Object { "$($_.DisplayName) (expires $($_.EndDateTime))" }) -join ", "
+            $olderList = ($olderCerts | ForEach-Object { "$($_.displayName) (expires $($_.endDateTime))" }) -join ", "
             $revokeQuery = "The paired instance now uses the new certificate. Remove the $($olderCerts.Count) older PatchPilot certificate(s) on app $($app.AppId)? $olderList. " +
                 "Anything else still using one of them (e.g. another instance sharing this app registration) will stop authenticating."
             if ($RevokeOldClientSecrets -or $PSCmdlet.ShouldContinue($revokeQuery, "Remove older certificates?")) {
-                $olderKeyIds = @($olderCerts | ForEach-Object { $_.KeyId })
-                $keep = @(
-                    $refreshedKeys | Where-Object { $olderKeyIds -notcontains $_.KeyId } | ForEach-Object {
-                        @{
-                            KeyId         = $_.KeyId
-                            DisplayName   = $_.DisplayName
-                            Type          = $_.Type
-                            Usage         = $_.Usage
-                            StartDateTime = $_.StartDateTime
-                            EndDateTime   = $_.EndDateTime
-                        }
-                    }
-                )
+                $olderKeyIds = @($olderCerts | ForEach-Object { $_.keyId })
+                $keep = @($refreshedKeys | Where-Object { $olderKeyIds -notcontains $_.keyId })
                 if ($PSCmdlet.ShouldProcess($app.AppId, "Remove $($olderCerts.Count) older certificate credential(s)")) {
                     try {
-                        Update-MgApplication -ApplicationId $app.Id -KeyCredentials $keep -ErrorAction Stop
+                        Set-AppKeyCredentials -ApplicationObjectId $app.Id -KeyCredentials $keep
                         Write-Success "Removed $($olderCerts.Count) older PatchPilot certificate(s)."
                     }
                     catch {

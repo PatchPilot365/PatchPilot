@@ -35,6 +35,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // and `node dist/index.js` (prod) without an env var or build-time copy step.
 const DEPLOY_SCRIPT_PATH = join(__dirname, "../../../../scripts/Deploy-PatchPilot.ps1");
 
+// Guards what gets spliced into the script as a PowerShell string literal.
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // A first-ever run installs the Microsoft.Graph PowerShell module (which can
 // take 5-15+ minutes on a machine with nothing cached), then does interactive
 // sign-in, GDAP enumeration, and role-assignment loops with backoff before
@@ -262,11 +265,12 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       // Tell every other process (and this one, on its next boot) to pick up
       // the freshly paired credentials. Compose's restart policy brings the
       // process back; load-env.ts reads the settings row we just wrote on the
-      // way in.
+      // way in. The exit is scheduled before publishing so this process's own
+      // copy of the message doesn't kill it mid-reply (isExitAfterReplyPending).
+      exitAfterReply(reply);
       await connection.publish(CREDENTIALS_ROTATED_CHANNEL, "paired").catch(() => undefined);
 
       reply.send({ paired: true });
-      exitAfterReply(reply);
     },
   );
 
@@ -324,6 +328,14 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       .replace(/\{\{INSTANCE_URL\}\}/g, config.PUBLIC_URL)
       .replace(/\{\{PAIRING_TOKEN\}\}/g, token)
       .replace(/\{\{REDIRECT_URI\}\}/g, config.AUTH_REDIRECT_URI)
+      // Once paired, default the script to this instance's own tenant so a
+      // re-pair doesn't fall back to auto-detecting whatever Azure session
+      // the admin's machine happens to hold. Unpaired: left as a placeholder
+      // (the script treats that as "not supplied").
+      .replace(
+        /\{\{MSP_TENANT_ID\}\}/g,
+        config.ENTRA_CONFIGURED && GUID_RE.test(config.ENTRA_TENANT_ID) ? config.ENTRA_TENANT_ID : "{{MSP_TENANT_ID}}",
+      )
       // Base64 body only (no PEM armour or newlines), so it drops into a
       // single-quoted PowerShell string.
       .replace(

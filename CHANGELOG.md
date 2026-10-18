@@ -23,6 +23,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   script. Instances already paired with a client secret keep working
   unchanged, and `Deploy-PatchPilot.ps1 -CredentialType Secret` still pairs
   with a secret.
+- Security: the API and worker remove the Entra client secret or certificate
+  key, and `TOKEN_ENCRYPTION_KEY`, from their process environment once
+  they've loaded their configuration, so a package that dumps the environment,
+  or a child process one spawns, no longer sees them.
+- Fixed: re-running the pairing script on an app that already has a
+  certificate failed with `KeyNotUpdatable`; it now keeps existing
+  certificates intact when adding the new one and removing older ones.
+- Fixed: a pairing script downloaded from an already-paired instance now
+  defaults to that instance's tenant, instead of guessing from whatever Azure
+  session the machine is signed in to (which could pick the wrong tenant and
+  fail sign-in with AADSTS50020).
+- Fixed: the pairing script could report a 500 error even though pairing
+  had succeeded, because the instance restarted before finishing its reply.
 
 - Security: upgraded to pnpm 10 (pinned to 10.34.6 with an integrity hash in
   `packageManager`). Dependency install scripts now run only for an explicit

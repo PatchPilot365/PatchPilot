@@ -109,6 +109,11 @@ await loadPairedEntraCredentials();
 try {
   const graphEnvModule = await import("@patchpilot/graph");
   Object.assign(graphEnvModule.env, graphEnvModule.loadEnv());
+  // Same scrub as apps/api/src/load-env.ts (see its comment): the graph env
+  // singleton now holds these, and nothing reads them from process.env again.
+  for (const name of ["ENTRA_CLIENT_SECRET", "ENTRA_CERTIFICATE_PRIVATE_KEY", "TOKEN_ENCRYPTION_KEY"]) {
+    delete process.env[name];
+  }
 } catch (err) {
   console.error("[load-env] failed to reconcile @patchpilot/graph env with loaded env:", err);
 }
