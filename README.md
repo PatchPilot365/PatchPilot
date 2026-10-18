@@ -126,7 +126,7 @@ domain if you have one), and an Ubuntu VM that installs Docker and brings up
 this exact stack on first boot — no SSH required for setup or day-to-day
 operation. See [`infra/azure/README.md`](infra/azure/README.md) for the full
 runbook, including switching to a custom domain later and updating the deploy.
-The VM gets a system-assigned managed identity with no roles, and the pairing
+The VM gets a user-assigned managed identity with no roles, and the pairing
 script authenticates with it automatically. Keeping the app credential in Key
 Vault instead is opt-in — see
 [Authenticate with the VM's managed identity](infra/azure/README.md#authenticate-with-the-vms-managed-identity)

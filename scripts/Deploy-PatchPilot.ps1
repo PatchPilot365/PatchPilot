@@ -33,10 +33,10 @@
 
 .EXAMPLE
     # PatchPilot on an Azure VM (infra/azure): a personalized download from
-    # the instance detects the VM's managed identity and pairs with it by
-    # default, so the instance stores no credential at all. To name the
-    # identity yourself (e.g. a user-assigned one), pass its object ID:
-    .\Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity -ManagedIdentityObjectId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    # the instance detects the VM's user-assigned managed identity and pairs
+    # with it by default, so the instance stores no credential at all. To
+    # name the identity yourself, pass its object ID and client ID:
+    .\Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity -ManagedIdentityObjectId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" -ManagedIdentityClientId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 .EXAMPLE
     .\Deploy-PatchPilot.ps1 -MspTenantId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" -Uninstall
@@ -145,23 +145,27 @@ param(
     # the private key never leaves the instance: nothing replayable is
     # created in Entra, sent over the network, or written to disk here.
     # "ManagedIdentity" (instances on an Azure VM only) registers the VM's
-    # managed identity as a federated credential on the app instead, so the
-    # instance stores no credential at all - see -ManagedIdentityObjectId.
+    # user-assigned managed identity as a federated credential on the app
+    # instead, so the instance stores no credential at all - see
+    # -ManagedIdentityObjectId.
     [Parameter(Mandatory = $false)]
     [ValidateSet("Auto", "Certificate", "Secret", "ManagedIdentity")]
     [string] $CredentialType = "Auto",
 
     # -CredentialType ManagedIdentity only: the object (principal) ID of the
-    # Azure VM's managed identity - the principalId output of
-    # infra/azure/main.bicep for its system-assigned identity. The identity
-    # must live in the MSP tenant this app registration is in. Optional on a
-    # personalized download from an Azure VM, which detected it already.
+    # Azure VM's user-assigned managed identity - the principalId output of
+    # infra/azure/main.bicep. Entra only accepts a user-assigned identity as
+    # an app's federated credential. The identity must live in the MSP tenant
+    # this app registration is in. Optional on a personalized download from
+    # an Azure VM, which detected it already.
     [Parameter(Mandatory = $false)]
     [string] $ManagedIdentityObjectId,
 
-    # -CredentialType ManagedIdentity only, and only for a user-assigned
-    # identity: its client ID, so the instance asks Azure for that identity's
-    # token rather than the VM's system-assigned one.
+    # -CredentialType ManagedIdentity only, and required with it: the same
+    # identity's client ID (the managedIdentityClientId output of
+    # infra/azure/main.bicep), so the instance asks Azure for that
+    # identity's token. Optional on a personalized download from an Azure
+    # VM, which detected it already.
     [Parameter(Mandatory = $false)]
     [string] $ManagedIdentityClientId,
 
@@ -171,10 +175,11 @@ param(
     [Parameter(Mandatory = $false)]
     [string] $CertificateBase64 = "{{CERTIFICATE_BASE64}}",
 
-    # The managed identity the instance found on its own Azure VM: object
-    # ID, tenant, and (user-assigned only) client ID. Template placeholders
-    # like $CertificateBase64 above, substituted on a personalized download
-    # only when the instance runs on Azure with a managed identity. Kept
+    # The user-assigned managed identity the instance found on its own Azure
+    # VM: object ID, tenant, and client ID. Template placeholders like
+    # $CertificateBase64 above, substituted on a personalized download only
+    # when the instance runs on Azure with ENTRA_MANAGED_IDENTITY_CLIENT_ID
+    # set and Azure confirmed that identity. Kept
     # apart from -ManagedIdentityObjectId/-ManagedIdentityClientId so an
     # explicit choice always wins over what was detected.
     [Parameter(Mandatory = $false)]
@@ -1015,11 +1020,11 @@ $guidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 # $DetectedManagedIdentityObjectId param comment). Un-substituted
 # placeholders, or anything that isn't a GUID, mean "nothing detected".
 $detectedIdentity = $null
-if ($pairingRequested -and $DetectedManagedIdentityObjectId -match $guidPattern -and $DetectedManagedIdentityTenantId -match $guidPattern) {
+if ($pairingRequested -and $DetectedManagedIdentityObjectId -match $guidPattern -and $DetectedManagedIdentityTenantId -match $guidPattern -and $DetectedManagedIdentityClientId -match $guidPattern) {
     $detectedIdentity = [pscustomobject]@{
         ObjectId = $DetectedManagedIdentityObjectId
         TenantId = $DetectedManagedIdentityTenantId
-        ClientId = if ($DetectedManagedIdentityClientId -match $guidPattern) { $DetectedManagedIdentityClientId } else { $null }
+        ClientId = $DetectedManagedIdentityClientId
     }
 }
 # The federated credential trusts identities issued by the MSP tenant (see
@@ -1041,7 +1046,7 @@ if ($CredentialType -eq "Auto" -and $detectedIdentity) {
 }
 elseif ($useManagedIdentity -and -not $ManagedIdentityObjectId -and $detectedIdentity) {
     if (-not $detectedIdentityUsable) {
-        throw "The PatchPilot VM's managed identity is in tenant $($detectedIdentity.TenantId), not $MspTenantId, so it can't sign in as this app. Pass -CredentialType Certificate, or -ManagedIdentityObjectId for an identity in tenant $MspTenantId."
+        throw "The PatchPilot VM's managed identity is in tenant $($detectedIdentity.TenantId), not $MspTenantId, so it can't sign in as this app. Pass -CredentialType Certificate, or -ManagedIdentityObjectId and -ManagedIdentityClientId for an identity in tenant $MspTenantId."
     }
     $ManagedIdentityObjectId = $detectedIdentity.ObjectId
     if (-not $ManagedIdentityClientId) { $ManagedIdentityClientId = $detectedIdentity.ClientId }
@@ -1052,10 +1057,12 @@ if ($useManagedIdentity) {
         throw "-CredentialType ManagedIdentity needs a personalized download from your PatchPilot instance (Setup -> App Registration), which carries a pairing token."
     }
     if ($ManagedIdentityObjectId -notmatch $guidPattern) {
-        throw "-CredentialType ManagedIdentity needs -ManagedIdentityObjectId: the object (principal) ID of the VM's managed identity, e.g. the principalId output of the Azure deployment."
+        throw "-CredentialType ManagedIdentity needs -ManagedIdentityObjectId: the object (principal) ID of the VM's user-assigned managed identity, e.g. the principalId output of the Azure deployment."
     }
-    if ($ManagedIdentityClientId -and $ManagedIdentityClientId -notmatch $guidPattern) {
-        throw "-ManagedIdentityClientId must be the user-assigned identity's client ID (a GUID)."
+    # Entra only accepts a user-assigned identity as an app's federated
+    # credential, and the instance needs its client ID to ask Azure for it.
+    if ($ManagedIdentityClientId -notmatch $guidPattern) {
+        throw "-CredentialType ManagedIdentity needs -ManagedIdentityClientId: the client ID of the VM's user-assigned managed identity, e.g. the managedIdentityClientId output of the Azure deployment. A system-assigned identity can't be used."
     }
 }
 elseif ($ManagedIdentityObjectId -or $ManagedIdentityClientId) {

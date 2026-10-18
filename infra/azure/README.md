@@ -106,8 +106,11 @@ HTTPS. Complete setup via the onboarding pairing flow described in the main
 
 ## Authenticate with the VM's managed identity
 
-This is automatic. The deployment gives the VM a system-assigned managed
-identity and grants it nothing. When you download the pairing script from the
+This is automatic. The deployment creates a user-assigned managed identity,
+`patchpilot-identity`, attaches it to the VM, grants it nothing, and writes its
+client ID to `.env` as `ENTRA_MANAGED_IDENTITY_CLIENT_ID`. (Entra only accepts
+a user-assigned identity as an app's federated credential, not a VM's
+system-assigned one.) When you download the pairing script from the
 instance, the instance finds that identity and pre-fills it into the script,
 which then pairs with it instead of a certificate. The script adds a
 federated identity credential for the identity to the app registration, and
@@ -123,18 +126,24 @@ To override what was detected:
 - **Use the certificate anyway:** run the script with
   `-CredentialType Certificate`.
 - **Name the identity yourself:** run it with
-  `-CredentialType ManagedIdentity -ManagedIdentityObjectId <object ID>`.
-  The system-assigned identity's object ID is the deployment's `principalId`
-  output, or:
+  `-CredentialType ManagedIdentity -ManagedIdentityObjectId <object ID>
+  -ManagedIdentityClientId <client ID>`. They're the deployment's
+  `principalId` and `managedIdentityClientId` outputs, or:
 
   ```bash
-  az vm show -g patchpilot-rg -n patchpilot-vm --query identity.principalId -o tsv
+  az identity show -g patchpilot-rg -n patchpilot-identity --query "{principalId:principalId, clientId:clientId}" -o table
   ```
 
-- **A user-assigned identity:** attach it to the VM and set
+- **A different user-assigned identity:** attach it to the VM and set
   `ENTRA_MANAGED_IDENTITY_CLIENT_ID=<its client ID>` in `.env` before
-  downloading the script, and it's detected the same way. You can also pass
-  its object ID and `-ManagedIdentityClientId <its client ID>` by hand.
+  downloading the script, then re-run `docker compose ... up -d` so it takes
+  effect. It's detected the same way.
+
+The identity is its own resource in the resource group, so rebuilding the VM
+from the template keeps the same identity and the app's federated credential
+keeps working. Deleting the whole resource group deletes the identity too;
+remove its `PatchPilot-ManagedIdentity-<object ID>` federated credential from
+the app registration afterwards.
 
 ## Keep the credential in Key Vault
 

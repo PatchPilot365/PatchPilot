@@ -416,7 +416,7 @@ const APP_CREDENTIAL_OPTIONS: { title: string; body: ReactNode }[] = [
   },
   {
     title: "Azure VM managed identity (default on Azure)",
-    body: "The VM's managed identity is registered on the app as a federated credential, and the instance asks Azure for the identity's token whenever it authenticates — nothing is stored on the instance at all. The pairing script uses it automatically when the instance detects one; the VM must be in a subscription whose directory is the MSP's home tenant, or the script falls back to the certificate. Not yet verified against a live Azure deployment.",
+    body: "The VM's user-assigned managed identity is registered on the app as a federated credential, and the instance asks Azure for the identity's token whenever it authenticates — nothing is stored on the instance at all. The pairing script uses it automatically when the instance detects one; the VM must be in a subscription whose directory is the MSP's home tenant, or the script falls back to the certificate. Not yet verified against a live Azure deployment.",
   },
   {
     title: "Azure Key Vault (opt-in)",

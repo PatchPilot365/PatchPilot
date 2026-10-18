@@ -1,9 +1,9 @@
 #cloud-config
 # Boot-time provisioning for the PatchPilot Azure VM. Deployed via main.bicep,
-# which substitutes __PP_DOMAIN__, __ADMIN_USER__, __REPO_URL__, and __REPO_REF__
-# before base64-encoding this file into the VM's customData. Everything below
-# runs once, automatically, on first boot — no SSH session required to bring
-# the stack up.
+# which substitutes __PP_DOMAIN__, __ADMIN_USER__, __REPO_URL__, __REPO_REF__,
+# and __MI_CLIENT_ID__ before base64-encoding this file into the VM's
+# customData. Everything below runs once, automatically, on first boot — no
+# SSH session required to bring the stack up.
 
 package_update: true
 package_upgrade: true
@@ -104,9 +104,15 @@ runcmd:
     sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgres://patchpilot:${PG_PASS}@postgres:5432/patchpilot#" "$ENV_FILE"
     sed -i "s#^REDIS_PASSWORD=.*#REDIS_PASSWORD=${REDIS_PASS}#" "$ENV_FILE"
     sed -i "s#^DEMO_MODE=.*#DEMO_MODE=false#" "$ENV_FILE"
-    # ENTRA_* stays at its placeholder value on purpose — the app boots with
-    # no Entra credentials and serves the "Pair this instance" setup screen
-    # until the phone-home pairing flow (Deploy-PatchPilot.ps1) supplies them.
+    # The VM's user-assigned managed identity (created by main.bicep). Not a
+    # secret: it only tells the instance which identity to ask Azure for, and
+    # lets a downloaded pairing script pair with it instead of a certificate.
+    sed -i "s|^#\{0,1\} \{0,1\}ENTRA_MANAGED_IDENTITY_CLIENT_ID=.*|ENTRA_MANAGED_IDENTITY_CLIENT_ID=__MI_CLIENT_ID__|" "$ENV_FILE"
+    grep -q '^ENTRA_MANAGED_IDENTITY_CLIENT_ID=' "$ENV_FILE" || echo "ENTRA_MANAGED_IDENTITY_CLIENT_ID=__MI_CLIENT_ID__" >> "$ENV_FILE"
+    # The other ENTRA_* values stay at their placeholders on purpose — the app
+    # boots with no Entra credentials and serves the "Pair this instance" setup
+    # screen until the phone-home pairing flow (Deploy-PatchPilot.ps1)
+    # supplies them.
 
   # Compose brings up postgres/redis/ollama, waits for the one-shot `migrate`
   # container to apply pending Drizzle migrations, then starts api/worker/web/

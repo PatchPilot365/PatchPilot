@@ -138,8 +138,8 @@ in the repository.
 
 ## Managed identity, and optional Key Vault
 
-The VM is created with a system-assigned managed identity that holds no
-roles. When you download the pairing script from the instance, it detects
+The VM is created with a user-assigned managed identity
+(`patchpilot-identity`) that holds no roles. When you download the pairing script from the instance, it detects
 that identity and the script pairs with it by default, so the instance
 stores no credential at all. There's nothing extra to run. This needs the
 VM in a subscription whose directory is your MSP tenant. If it isn't, the

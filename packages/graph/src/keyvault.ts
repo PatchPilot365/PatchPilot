@@ -24,8 +24,10 @@ const KEY_VAULT_API_VERSION = "7.4";
 const managedIdentityApps = new Map<string, ManagedIdentityApplication>();
 
 /**
- * Token getter for this machine's managed identity: the system-assigned one,
- * or the user-assigned one with `clientId`. One MSAL app per identity, kept
+ * Token getter for this machine's managed identity: the user-assigned one
+ * with `clientId`, else the system-assigned one (enough for reading Key
+ * Vault, but Entra only accepts a user-assigned identity as an app's
+ * federated credential). One MSAL app per identity, kept
  * for the life of the process because it caches tokens until shortly before
  * they expire — calling this per token request costs nothing extra.
  */
@@ -141,7 +143,7 @@ export interface DetectedManagedIdentity {
 }
 
 export interface DetectManagedIdentityOptions {
-  /** A user-assigned identity's client ID; omit for the system-assigned one. */
+  /** A user-assigned identity's client ID; omit for the machine's only identity. */
   clientId?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;

@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { X509Certificate, createPrivateKey, createPublicKey } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Fastify `.inject()` coverage for the pairing flow's credential handling,
@@ -192,45 +192,46 @@ describe("GET /api/onboarding/pairing-script", () => {
     ).toBe(true);
   });
 
-  it("leaves the managed identity placeholders alone off Azure", async () => {
+  it("doesn't probe for a managed identity with no client ID configured", async () => {
     const app = await buildApp();
     const { script, certificateBase64 } = await downloadScript(app);
     expect(script).toContain('$DetectedManagedIdentityObjectId = "{{MANAGED_IDENTITY_OBJECT_ID}}"');
     expect(script).toContain('$DetectedManagedIdentityTenantId = "{{MANAGED_IDENTITY_TENANT_ID}}"');
     expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
     expect(certificateBase64).not.toMatch(/^\{\{/);
-    expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId: undefined });
+    expect(detectManagedIdentityMock).not.toHaveBeenCalled();
   });
 
-  it("pre-fills the VM's managed identity on Azure, keeping the certificate as the fallback", async () => {
-    const objectId = "a0000000-0000-4000-8000-000000000001";
-    const tenantId = "b0000000-0000-4000-8000-000000000002";
-    detectManagedIdentityMock.mockResolvedValue({ objectId, tenantId });
-    const app = await buildApp();
-    const { script, certificateBase64 } = await downloadScript(app);
-    expect(script).toContain(`$DetectedManagedIdentityObjectId = "${objectId}"`);
-    expect(script).toContain(`$DetectedManagedIdentityTenantId = "${tenantId}"`);
-    // System-assigned: no client ID to pass on.
-    expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
-    expect(certificateBase64).not.toMatch(/^\{\{/);
-    expect(auditSafeMock.mock.calls[0]![0].summary).toContain("Azure managed identity detected");
-  });
-
-  it("probes for and passes on a configured user-assigned identity", async () => {
+  describe("with a user-assigned identity configured", () => {
     const clientId = "c0000000-0000-4000-8000-000000000003";
-    detectManagedIdentityMock.mockResolvedValue({
-      objectId: "a0000000-0000-4000-8000-000000000001",
-      tenantId: "b0000000-0000-4000-8000-000000000002",
+    beforeEach(() => {
+      Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: clientId });
     });
-    Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: clientId });
-    try {
+    afterEach(() => {
+      Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: "" });
+    });
+
+    it("pre-fills the identity on Azure, keeping the certificate as the fallback", async () => {
+      const objectId = "a0000000-0000-4000-8000-000000000001";
+      const tenantId = "b0000000-0000-4000-8000-000000000002";
+      detectManagedIdentityMock.mockResolvedValue({ objectId, tenantId });
+      const app = await buildApp();
+      const { script, certificateBase64 } = await downloadScript(app);
+      expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId });
+      expect(script).toContain(`$DetectedManagedIdentityObjectId = "${objectId}"`);
+      expect(script).toContain(`$DetectedManagedIdentityTenantId = "${tenantId}"`);
+      expect(script).toContain(`$DetectedManagedIdentityClientId = "${clientId}"`);
+      expect(certificateBase64).not.toMatch(/^\{\{/);
+      expect(auditSafeMock.mock.calls[0]![0].summary).toContain("Azure managed identity detected");
+    });
+
+    it("leaves the placeholders alone when Azure doesn't answer", async () => {
       const app = await buildApp();
       const { script } = await downloadScript(app);
       expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId });
-      expect(script).toContain(`$DetectedManagedIdentityClientId = "${clientId}"`);
-    } finally {
-      Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: "" });
-    }
+      expect(script).toContain('$DetectedManagedIdentityObjectId = "{{MANAGED_IDENTITY_OBJECT_ID}}"');
+      expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
+    });
   });
 
   it("leaves the tenant ID as a placeholder while unpaired", async () => {
@@ -350,24 +351,12 @@ describe("POST /api/onboarding/pair", () => {
     expect(tokenRows()[0]!.privateKeyEncrypted).toBeNull();
   });
 
-  it("pairs a system-assigned managed identity without a client ID", async () => {
-    const app = await buildApp();
-    const { token } = await downloadScript(app);
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/onboarding/pair",
-      payload: { token, clientId: "client-1", tenantId: "tenant-1", credentialType: "managed-identity" },
-    });
-    expect(res.statusCode).toBe(200);
-    const value = settingsRow("entra-app-registration")!.value as Row;
-    expect(value.credentialType).toBe("managed-identity");
-    expect(value).not.toHaveProperty("managedIdentityClientId");
-  });
-
-  it("rejects a managed identity client ID that isn't a GUID, or on another credential type, before spending the token", async () => {
+  it("rejects a managed identity client ID that is missing, isn't a GUID, or is on another credential type, before spending the token", async () => {
     const app = await buildApp();
     const { token } = await downloadScript(app);
     for (const payload of [
+      // Entra only accepts a user-assigned identity as a federated credential.
+      { token, clientId: "c", tenantId: "t", credentialType: "managed-identity" },
       { token, clientId: "c", tenantId: "t", credentialType: "managed-identity", managedIdentityClientId: "nope" },
       {
         token,
