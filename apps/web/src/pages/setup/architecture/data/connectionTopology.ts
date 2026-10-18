@@ -63,6 +63,11 @@ export const connectionTopology: ArchDiagramData = {
         facts: [
           { label: "Access model", value: "Delegated only — no app-only credentials" },
           { label: "Scheduled runs", value: "Use the owning engineer's stored credential" },
+          {
+            label: "Proves its own identity with",
+            value:
+              "A certificate it generated itself (private key never leaves the server) — or, on Azure, the VM's managed identity or a Key Vault credential",
+          },
         ],
       },
     },
@@ -82,7 +87,7 @@ export const connectionTopology: ArchDiagramData = {
           {
             label: "Background access",
             value:
-              "The engineer's refresh credential is stored for up to 90 days so overnight schedules can run with nobody logged in",
+              "The engineer's refresh credential is stored for up to 90 days so overnight schedules can run with nobody logged in — encrypted, and bound to that engineer's own cache key",
           },
         ],
       },

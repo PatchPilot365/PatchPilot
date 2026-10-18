@@ -176,6 +176,39 @@ export function ArchitecturePage() {
         </div>
       </Section>
 
+      <Section title="How PatchPilot proves its own identity to Entra">
+        <div className="max-w-3xl space-y-3 text-sm text-slate-600 dark:text-slate-300">
+          <p>
+            Every token request above is made by PatchPilot's own app
+            registration in the home tenant, and Entra makes the app prove
+            who it is each time. That credential never grants access to a
+            tenant by itself — tokens still carry only the engineer's
+            delegated roles — but it's what stops a stolen refresh token from
+            being redeemed anywhere else. App Registration shows which one
+            this instance uses.
+          </p>
+        </div>
+        <Card className="mt-4 p-0">
+          <dl className="divide-y divide-slate-100">
+            {APP_CREDENTIAL_OPTIONS.map((item) => (
+              <div key={item.title} className="px-5 py-4">
+                <dt className="text-sm font-medium text-slate-800 dark:text-slate-100">{item.title}</dt>
+                <dd className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.body}</dd>
+              </div>
+            ))}
+          </dl>
+        </Card>
+        <p className="mt-4 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+          The renewable credential an overnight schedule relies on is an
+          engineer's refresh token, cached in Redis. Each cache entry is
+          encrypted and bound to that engineer's own cache key, so it can't be
+          copied under another engineer's name, and Redis can require a
+          password. A Conditional Access policy can further limit where a
+          stolen token would work at all — see the Conditional Access guide in
+          the PatchPilot documentation.
+        </p>
+      </Section>
+
       <Section title="How a fix reaches a device">
         <p className="mb-4 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
           Remediation runs through Defender for Endpoint's Live Response. The
@@ -278,7 +311,12 @@ export function ArchitecturePage() {
           <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono">
             login.microsoftonline.com
           </code>{" "}
-          for auth. Everything below is about the customer's managed
+          for auth — and, on Azure with the managed identity or Key Vault
+          options, the VM's instance metadata endpoint{" "}
+          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono">
+            169.254.169.254
+          </code>{" "}
+          and the vault's own host. Everything below is about the customer's managed
           device instead — the machine Live Response or an Intune
           remediation is actually reaching — which is the network a
           remediation job usually stalls or fails on.
@@ -364,6 +402,25 @@ const KNOWN_LIMITATIONS: { title: string; body: ReactNode }[] = [
   {
     title: "Home-tenant access groups need Entra ID P1/P2, not just Global Administrator",
     body: "Deploy-PatchPilot.ps1 creates PatchPilot Read-Only Access and PatchPilot Write Access as role-assignable security groups, which requires the tenant to hold an Entra ID Premium P1 (or P2) license — a tenant-wide licensing gate, independent of the connected account's own role. Without it, group creation fails with a plain 403 that looks identical to a missing Global Administrator role until the script's own diagnostic spells out which it is. This doesn't block PatchPilot itself: a Global Administrator (or anyone directly assigned the roles listed above) can manage the home tenant exactly the same way without either group.",
+  },
+];
+
+const APP_CREDENTIAL_OPTIONS: { title: string; body: ReactNode }[] = [
+  {
+    title: "Instance-generated certificate (default)",
+    body: "When the pairing script is downloaded, the instance generates a key pair. The script registers only the public certificate on the app; the private key stays on the server, encrypted in its database, and never crosses the network. It's valid for a year, and App Registration warns 30 days before it expires — renew it by downloading and running a fresh pairing script.",
+  },
+  {
+    title: "Client secret",
+    body: "Still supported for instances paired before certificates, or when the pairing script is run with -CredentialType Secret. A secret is a bearer string that works from anywhere it's copied to, so it's the least protective option.",
+  },
+  {
+    title: "Azure VM managed identity (opt-in)",
+    body: "The VM's managed identity is registered on the app as a federated credential, and the instance asks Azure for the identity's token whenever it authenticates — nothing is stored on the instance at all. The VM must be in a subscription whose directory is the MSP's home tenant. Not yet verified against a live Azure deployment.",
+  },
+  {
+    title: "Azure Key Vault (opt-in)",
+    body: "The certificate or client secret is kept in a Key Vault and read with the VM's managed identity. For a certificate, Key Vault signs each sign-in itself, so the private key never leaves the vault. Not yet verified against a live Azure deployment.",
   },
 ];
 

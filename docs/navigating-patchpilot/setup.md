@@ -17,7 +17,12 @@ and its OAuth redirect origins. Per-tenant admin consent now lives on the
 [Tenants]({{ "/navigating-patchpilot/settings/#tenants" | relative_url }})
 page — this page covers the one-time home-tenant setup: deploying the app
 registration, granting the MSP's own tenant admin consent (read-only),
-optionally adding write API permissions, and discovering tenants. See
+optionally adding write API permissions, and discovering tenants. Its
+**Application identity** panel shows the credential the instance
+authenticates with — certificate, client secret, managed identity, or one
+kept in Key Vault — with a risk label, and a certificate's expiry date,
+warning 30 days before it runs out. Client-secret rotation appears only for
+an instance using a local client secret. See
 [Getting Started]({{ "/getting-started/" | relative_url }}) for the
 step-by-step version of this flow.
 

@@ -136,6 +136,24 @@ log lines. Full technical detail on the Azure template lives in
 [`infra/azure/README.md`](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md)
 in the repository.
 
+## Optional: managed identity or Key Vault
+
+The VM is created with a system-assigned managed identity that holds no
+roles and is unused unless you opt in. Two options build on it:
+
+- **Pair with the managed identity**, so the instance stores no credential
+  at all: run the pairing script with
+  `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`.
+  The VM must be in a subscription whose directory is your MSP tenant.
+- **Keep the app's certificate or client secret in Azure Key Vault**, read
+  with the VM's identity. A Key Vault certificate's private key never leaves
+  the vault.
+
+Both are covered step by step in
+[`infra/azure/README.md`](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md#authenticate-with-the-vms-managed-identity).
+Neither has been verified against a live Azure deployment yet, so the
+default instance-generated certificate is the tested path.
+
 ## Next step
 
 Once the deployment finishes, continue to

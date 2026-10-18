@@ -59,10 +59,11 @@ written in `.env` (`AUTH_REDIRECT_URI` / `PUBLIC_URL` / `CORS_ORIGINS`).
 `http://localhost` is the only exception, for local testing.
 
 > **A static host (including GitHub Pages) cannot run PatchPilot365 itself.**
-> Completing the OAuth code-for-token exchange happens server-side using a
-> client secret that must never reach the browser. A static host can only
-> serve the SPA shell — sign-in would be broken, since there's no server
-> there to hold the secret. You need a host that can run the Docker stack.
+> Completing the OAuth code-for-token exchange happens server-side using the
+> app's credential (a certificate or client secret), which must never reach
+> the browser. A static host can only serve the SPA shell — sign-in would be
+> broken, since there's no server there to hold the credential. You need a
+> host that can run the Docker stack.
 
 ## AI features (optional)
 
