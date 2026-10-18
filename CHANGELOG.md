@@ -36,6 +36,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   fail sign-in with AADSTS50020).
 - Fixed: the pairing script could report a 500 error even though pairing
   had succeeded, because the instance restarted before finishing its reply.
+- Security: each encrypted token cache in Redis is now bound to the Redis key
+  it is stored under (AES-GCM additional authenticated data). Someone able to
+  write to Redis can no longer copy one engineer's cached refresh token under
+  another engineer's key to act as them. Existing caches keep working and are
+  re-encrypted in the new format the next time they're written. Rolling back
+  to an older version afterwards means engineers have to sign in again.
+- Security: Docker Compose installs can now give Redis a password through
+  `REDIS_PASSWORD` in `.env`. New installs (Azure deploy and
+  `Deploy-PatchPilot.ps1`) generate one automatically. Existing installs keep
+  running without a password until one is added; to add one, set
+  `REDIS_PASSWORD` to a random hex string (`openssl rand -hex 32`) and run
+  `docker compose up -d` again.
 
 - Security: upgraded to pnpm 10 (pinned to 10.34.6 with an integrity hash in
   `packageManager`). Dependency install scripts now run only for an explicit

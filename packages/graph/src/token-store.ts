@@ -43,7 +43,10 @@ export async function storeToken(
   slot: TokenSlot = "login",
 ): Promise<void> {
   const ttlSeconds = Math.max(60, Math.floor((token.expiresAt - Date.now()) / 1000) + 3600);
-  await redis.set(key(engineerUpn, tenantId, slot), encrypt(JSON.stringify(token)), "EX", ttlSeconds);
+  // The ciphertext is bound to its own Redis key (see crypto.ts) so it can't be
+  // replayed under another engineer's or tenant's key.
+  const k = key(engineerUpn, tenantId, slot);
+  await redis.set(k, encrypt(JSON.stringify(token), k), "EX", ttlSeconds);
 }
 
 export async function getToken(
@@ -51,9 +54,10 @@ export async function getToken(
   tenantId: string,
   slot: TokenSlot = "login",
 ): Promise<CachedToken | null> {
-  const raw = await redis.get(key(engineerUpn, tenantId, slot));
+  const k = key(engineerUpn, tenantId, slot);
+  const raw = await redis.get(k);
   if (!raw) return null;
-  return JSON.parse(decrypt(raw)) as CachedToken;
+  return JSON.parse(decrypt(raw, k)) as CachedToken;
 }
 
 export async function clearTokens(engineerUpn: string): Promise<void> {
