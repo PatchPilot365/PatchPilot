@@ -32,6 +32,12 @@
     .\Deploy-PatchPilot.ps1 -CredentialType Secret
 
 .EXAMPLE
+    # PatchPilot on an Azure VM (infra/azure): pair with the VM's managed
+    # identity, so the instance stores no credential at all. Use the
+    # principalId the Azure deployment outputs.
+    .\Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity -ManagedIdentityObjectId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+.EXAMPLE
     .\Deploy-PatchPilot.ps1 -MspTenantId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" -Uninstall
 
 .EXAMPLE
@@ -135,9 +141,25 @@ param(
     # when a certificate is available. A certificate is preferred because
     # the private key never leaves the instance: nothing replayable is
     # created in Entra, sent over the network, or written to disk here.
+    # "ManagedIdentity" (instances on an Azure VM only) registers the VM's
+    # managed identity as a federated credential on the app instead, so the
+    # instance stores no credential at all - see -ManagedIdentityObjectId.
     [Parameter(Mandatory = $false)]
-    [ValidateSet("Auto", "Certificate", "Secret")]
+    [ValidateSet("Auto", "Certificate", "Secret", "ManagedIdentity")]
     [string] $CredentialType = "Auto",
+
+    # -CredentialType ManagedIdentity only: the object (principal) ID of the
+    # Azure VM's managed identity - the principalId output of
+    # infra/azure/main.bicep for its system-assigned identity. The identity
+    # must live in the MSP tenant this app registration is in.
+    [Parameter(Mandatory = $false)]
+    [string] $ManagedIdentityObjectId,
+
+    # -CredentialType ManagedIdentity only, and only for a user-assigned
+    # identity: its client ID, so the instance asks Azure for that identity's
+    # token rather than the VM's system-assigned one.
+    [Parameter(Mandatory = $false)]
+    [string] $ManagedIdentityClientId,
 
     # Public X.509 certificate (base64 DER) the instance generated for this
     # pairing; its private key stays on the instance. Template placeholder,
@@ -959,11 +981,31 @@ $secretPersisted = $false
 # the instance, so there is nothing this script could write to a local .env.
 $certificateAvailable = $CertificateBase64 `
     -and -not ($CertificateBase64.StartsWith("{{") -and $CertificateBase64.EndsWith("}}"))
-$useCertificate = $pairingRequested -and $certificateAvailable -and $CredentialType -ne "Secret"
+$useCertificate = $pairingRequested -and $certificateAvailable -and $CredentialType -in @("Auto", "Certificate")
 if ($CredentialType -eq "Certificate" -and -not $useCertificate) {
     throw "-CredentialType Certificate needs a personalized download from your PatchPilot instance (Setup -> App Registration), which carries the instance's certificate and a pairing token."
 }
 $certificateAdded = $null
+
+# A managed identity is likewise only usable with pairing: the instance has
+# to be told to use it, and there is no credential for a local .env.
+$useManagedIdentity = $CredentialType -eq "ManagedIdentity"
+$guidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+if ($useManagedIdentity) {
+    if (-not $pairingRequested) {
+        throw "-CredentialType ManagedIdentity needs a personalized download from your PatchPilot instance (Setup -> App Registration), which carries a pairing token."
+    }
+    if ($ManagedIdentityObjectId -notmatch $guidPattern) {
+        throw "-CredentialType ManagedIdentity needs -ManagedIdentityObjectId: the object (principal) ID of the VM's managed identity, e.g. the principalId output of the Azure deployment."
+    }
+    if ($ManagedIdentityClientId -and $ManagedIdentityClientId -notmatch $guidPattern) {
+        throw "-ManagedIdentityClientId must be the user-assigned identity's client ID (a GUID)."
+    }
+}
+elseif ($ManagedIdentityObjectId -or $ManagedIdentityClientId) {
+    throw "-ManagedIdentityObjectId and -ManagedIdentityClientId only apply with -CredentialType ManagedIdentity."
+}
+$managedIdentityCredential = $null
 
 try {
     Ensure-Folder -Path $OutputFolder
@@ -1613,7 +1655,33 @@ try {
             }
     )
 
-    if ($useCertificate) {
+    if ($useManagedIdentity) {
+        # A federated identity credential: Entra accepts a token issued to
+        # this managed identity, for api://AzureADTokenExchange, in place of
+        # a secret or certificate. Nothing is created that could be copied
+        # and replayed from elsewhere. Reused if this identity is already
+        # registered (a re-run), since Entra rejects a duplicate
+        # issuer/subject pair.
+        $ficIssuer = "https://login.microsoftonline.com/$MspTenantId/v2.0"
+        $existingFic = @(Get-MgApplicationFederatedIdentityCredential -ApplicationId $app.Id -All -ErrorAction SilentlyContinue) |
+            Where-Object { $_.Issuer -eq $ficIssuer -and $_.Subject -eq $ManagedIdentityObjectId } |
+            Select-Object -First 1
+        if ($existingFic) {
+            $managedIdentityCredential = $existingFic
+            Write-Success "Managed identity $ManagedIdentityObjectId is already a federated credential on the app. No client secret was created."
+        }
+        elseif ($PSCmdlet.ShouldProcess($app.AppId, "Add federated identity credential for managed identity $ManagedIdentityObjectId")) {
+            $managedIdentityCredential = New-MgApplicationFederatedIdentityCredential -ApplicationId $app.Id -BodyParameter @{
+                name        = "PatchPilot-ManagedIdentity-$ManagedIdentityObjectId"
+                issuer      = $ficIssuer
+                subject     = $ManagedIdentityObjectId
+                audiences   = @("api://AzureADTokenExchange")
+                description = "PatchPilot instance's Azure managed identity (added by Deploy-PatchPilot.ps1)"
+            }
+            Write-Success "Registered managed identity $ManagedIdentityObjectId as a federated credential. No client secret was created."
+        }
+    }
+    elseif ($useCertificate) {
         # Register the instance's public certificate as a credential on the
         # app. Graph's PATCH replaces the whole keyCredentials collection, so
         # the existing entries are sent back, unchanged, alongside the new one
@@ -1931,6 +1999,9 @@ try {
         if ($certificateAdded) {
             Write-Host "  Skipped .env credential update - the instance authenticates with its own certificate, whose private key never leaves it." -ForegroundColor DarkGray
         }
+        elseif ($managedIdentityCredential) {
+            Write-Host "  Skipped .env credential update - the instance authenticates with its Azure managed identity, so there is no credential to store." -ForegroundColor DarkGray
+        }
         else {
             Write-WarningMessage "Skipped .env secret update because no new client secret was generated."
             Write-WarningMessage "If you need a fresh .env with a new secret, re-run with -RotateClientSecret."
@@ -2085,7 +2156,7 @@ LOG_LEVEL=info
     if (-not $pairingRequested) {
         Write-Host "  Skipped - no -InstanceUrl/-PairingToken supplied (self-hosted .env config above is authoritative)." -ForegroundColor DarkGray
     }
-    elseif (-not $secret -and -not $certificateAdded) {
+    elseif (-not $secret -and -not $certificateAdded -and -not $managedIdentityCredential) {
         # Reachable when step [7/15]'s rotation prompt was declined (or this
         # run used -WhatIf) - the app registration exists but no secret VALUE
         # is available to send.
@@ -2143,6 +2214,13 @@ LOG_LEVEL=info
             # Nothing secret to send: the instance already holds the private
             # key for the certificate registered in step [7/15].
             $pairingBody.credentialType = "certificate"
+        }
+        elseif ($managedIdentityCredential) {
+            # Nothing secret to send: the VM's managed identity is the credential.
+            $pairingBody.credentialType = "managed-identity"
+            if ($ManagedIdentityClientId) {
+                $pairingBody.managedIdentityClientId = $ManagedIdentityClientId
+            }
         }
         else {
             $pairingBody.credentialType = "secret"
@@ -2245,9 +2323,10 @@ LOG_LEVEL=info
         }
     }
 
-    if ($certificateAdded -and $paired) {
-        # The instance now authenticates with the new certificate, so older
-        # PatchPilot certificates on the app are dead weight. Same
+    if (($certificateAdded -or $managedIdentityCredential) -and $paired) {
+        # The instance now authenticates with the new certificate (or its
+        # managed identity), so older PatchPilot certificates on the app are
+        # dead weight. Same
         # replace-the-collection mechanics as step [7/15]: send back everything
         # unchanged except the older PatchPilot-Deploy-* certificates.
         $refreshedKeys = @(Get-AppKeyCredentials -ApplicationObjectId $app.Id)
@@ -2258,7 +2337,7 @@ LOG_LEVEL=info
         )
         if ($olderCerts.Count -gt 0) {
             $olderList = ($olderCerts | ForEach-Object { "$($_.displayName) (expires $($_.endDateTime))" }) -join ", "
-            $revokeQuery = "The paired instance now uses the new certificate. Remove the $($olderCerts.Count) older PatchPilot certificate(s) on app $($app.AppId)? $olderList. " +
+            $revokeQuery = "The paired instance now uses its new credential. Remove the $($olderCerts.Count) older PatchPilot certificate(s) on app $($app.AppId)? $olderList. " +
                 "Anything else still using one of them (e.g. another instance sharing this app registration) will stop authenticating."
             if ($RevokeOldClientSecrets -or $PSCmdlet.ShouldContinue($revokeQuery, "Remove older certificates?")) {
                 $olderKeyIds = @($olderCerts | ForEach-Object { $_.keyId })
@@ -2279,9 +2358,10 @@ LOG_LEVEL=info
         }
     }
 
-    if ($secret -or ($certificateAdded -and $paired)) {
-        # After a certificate pairing every PatchPilot client secret is
-        # unused by this instance ($secret is null, so none is excluded).
+    if ($secret -or (($certificateAdded -or $managedIdentityCredential) -and $paired)) {
+        # After a certificate or managed identity pairing every PatchPilot
+        # client secret is unused by this instance ($secret is null, so none
+        # is excluded).
         $olderSecrets = @(
             $existingPasswordCredentials |
                 Where-Object { $_.DisplayName -like "PatchPilot-Deploy-*" -and $_.KeyId -ne $secret.KeyId }

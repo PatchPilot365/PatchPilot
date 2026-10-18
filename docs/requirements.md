@@ -90,7 +90,9 @@ two valid states before pairing.
 | `PP_DOMAIN` | Bare hostname Caddy serves and requests a Let's Encrypt certificate for. |
 | `AUTH_REDIRECT_URI` | Entra app redirect URI — must exactly match the app registration. |
 | `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` | Filled in automatically by the pairing script. Leave blank until then. |
-| `ENTRA_CREDENTIAL_TYPE` / `ENTRA_CERTIFICATE_PRIVATE_KEY` / `ENTRA_CERTIFICATE_THUMBPRINT_SHA256` | Optional. `secret` (default) or `certificate`. A paired instance sets these itself from the certificate it generated during pairing; only set them by hand to use your own certificate. |
+| `ENTRA_CREDENTIAL_TYPE` / `ENTRA_CERTIFICATE_PRIVATE_KEY` / `ENTRA_CERTIFICATE_THUMBPRINT_SHA256` | Optional. `secret` (default), `certificate` or `managed-identity`. A paired instance sets these itself from the certificate it generated during pairing; only set them by hand to use your own certificate. `managed-identity` is for Azure VMs only; see [Deploying to an Azure VM](../infra/azure/README.md#authenticate-with-the-vms-managed-identity). |
+| `ENTRA_MANAGED_IDENTITY_CLIENT_ID` | Optional, Azure only. A user-assigned managed identity's client ID. Leave blank for the VM's system-assigned identity. |
+| `ENTRA_KEY_VAULT_URL` / `ENTRA_KEY_VAULT_SECRET_NAME` / `ENTRA_KEY_VAULT_CERTIFICATE_NAME` | Optional, Azure only. Read the client secret, or sign with a certificate, kept in Azure Key Vault, using the VM's managed identity. Name a secret for `secret` or a certificate for `certificate`. A Key Vault credential wins over a local or paired one of the same type. |
 | `SESSION_SECRET` / `TOKEN_ENCRYPTION_KEY` | 32-byte base64 keys — generate with `openssl rand -base64 32`. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_HOST` / `POSTGRES_PORT` / `DATABASE_URL` | Database connection. |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_URL` | Job queue and token cache backing. |

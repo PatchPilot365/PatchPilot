@@ -1149,8 +1149,8 @@ const CERTIFICATE_WARNING_DAYS = 30;
  * a copy of the instance's disk or database: a client secret is a bearer
  * string usable from anywhere (highest risk); a certificate's private key
  * still lives on the instance, but nothing replayable is stored in Entra or
- * sent over the network (moderate). Key Vault and managed identity will slot
- * in below these as lower-risk options.
+ * sent over the network (moderate); a managed identity stores nothing at all
+ * (lower). Key Vault adjusts these — see credentialBadge.
  */
 const CREDENTIAL_BADGES: Record<EntraCredentialType, { label: string; risk: string; className: string }> = {
   secret: {
@@ -1163,10 +1163,27 @@ const CREDENTIAL_BADGES: Record<EntraCredentialType, { label: string; risk: stri
     risk: "Moderate risk",
     className: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
   },
+  "managed-identity": {
+    label: "Managed identity",
+    risk: "Lower risk",
+    className: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  },
 };
 
-function CredentialField({ credential }: { credential: EntraCredentialSummary }) {
+/**
+ * A Key Vault certificate's key is non-exportable, so a copy of the instance
+ * gets nothing (lower risk); a Key Vault secret is off the disk but still a
+ * bearer string once fetched into memory (moderate).
+ */
+function credentialBadge(credential: EntraCredentialSummary) {
   const badge = CREDENTIAL_BADGES[credential.type];
+  if (credential.source !== "key-vault") return badge;
+  const adjusted = credential.type === "certificate" ? CREDENTIAL_BADGES["managed-identity"] : CREDENTIAL_BADGES.certificate;
+  return { ...adjusted, label: `${badge.label} in Key Vault` };
+}
+
+function CredentialField({ credential }: { credential: EntraCredentialSummary }) {
+  const badge = credentialBadge(credential);
   const expiresAt = credential.expiresAt ? new Date(credential.expiresAt) : null;
   const daysLeft = expiresAt ? Math.floor((expiresAt.getTime() - Date.now()) / 86_400_000) : null;
   const expiring = daysLeft !== null && daysLeft < CERTIFICATE_WARNING_DAYS;
@@ -1183,7 +1200,7 @@ function CredentialField({ credential }: { credential: EntraCredentialSummary })
         </span>
         {expiresAt && <span>Expires {expiresAt.toLocaleDateString()}</span>}
       </div>
-      {credential.type === "secret" && (
+      {credential.type === "secret" && credential.source !== "key-vault" && (
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           A client secret works from anywhere it&apos;s copied to. To switch to a
           certificate, whose private key never leaves this instance, download a
@@ -1217,8 +1234,10 @@ function RotateClientSecretSection({
 }) {
   if (demoMode) return null;
   // A certificate is rotated by re-running a freshly downloaded pairing
-  // script (CredentialField says so); -RotateClientSecret doesn't apply.
-  if (credential?.type === "certificate") return null;
+  // script (CredentialField says so), a Key Vault secret in the vault, and a
+  // managed identity has nothing to rotate; -RotateClientSecret applies to
+  // none of them.
+  if (credential && (credential.type !== "secret" || credential.source === "key-vault")) return null;
 
   const deployCmdWindows =
     "powershell.exe -ExecutionPolicy Bypass -File .\\Deploy-PatchPilot.ps1";

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "13926226252766582607"
+      "templateHash": "3254149752657287895"
     }
   },
   "parameters": {
@@ -210,6 +210,9 @@
       "apiVersion": "2024-03-01",
       "name": "[variables('vmName')]",
       "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "properties": {
         "hardwareProfile": {
           "vmSize": "[parameters('vmSize')]"
@@ -288,6 +291,13 @@
     "url": {
       "type": "string",
       "value": "[format('https://{0}', if(empty(parameters('customDomain')), reference(resourceId('Microsoft.Network/publicIPAddresses', 'patchpilot-ip'), '2023-09-01').dnsSettings.fqdn, parameters('customDomain')))]"
+    },
+    "principalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object (principal) ID of the VM system-assigned managed identity, for Deploy-PatchPilot.ps1 -ManagedIdentityObjectId."
+      },
+      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', variables('vmName')), '2024-03-01', 'full').identity.principalId]"
     }
   }
 }

@@ -58,9 +58,14 @@ const pairBodySchema = z.object({
   // existed (or a manual caller) still pairs exactly as before. "certificate"
   // means the script registered the public certificate this token was issued
   // with; the private key is already here, on the token row, and is never
-  // accepted from the request body.
-  credentialType: z.enum(["secret", "certificate"]).default("secret"),
+  // accepted from the request body. "managed-identity" means the script added
+  // a federated identity credential for this Azure VM's managed identity, so
+  // there is no credential to send at all.
+  credentialType: z.enum(["secret", "certificate", "managed-identity"]).default("secret"),
   clientSecret: z.string().min(1).optional(),
+  // Managed identity only: a user-assigned identity's client ID. Omitted for
+  // the VM's system-assigned identity, which needs no ID.
+  managedIdentityClientId: z.string().regex(GUID_RE, "managedIdentityClientId must be a GUID").nullish(),
   // Optional: the UPN Deploy-PatchPilot.ps1 was signed in to Microsoft Graph
   // as when it created the app registration ($context.Account — see the
   // script's Connect-MgGraph section). Lets a fresh pairing self-provision
@@ -86,9 +91,13 @@ const pairBodySchema = z.object({
   // must never be the reason the whole pairing request 400s.
   readOnlyGroupId: z.string().min(1).nullish(),
   writeGroupId: z.string().min(1).nullish(),
-}).refine((b) => b.credentialType !== "secret" || b.clientSecret, {
-  message: "clientSecret is required when credentialType is secret",
-});
+})
+  .refine((b) => b.credentialType !== "secret" || b.clientSecret, {
+    message: "clientSecret is required when credentialType is secret",
+  })
+  .refine((b) => b.credentialType === "managed-identity" || !b.managedIdentityClientId, {
+    message: "managedIdentityClientId is only valid when credentialType is managed-identity",
+  });
 
 export async function onboardingPairingRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -133,7 +142,8 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
             certificatePem: string;
             privateKeyEncrypted: string;
             thumbprintSha256: string;
-          };
+          }
+        | { credentialType: "managed-identity"; managedIdentityClientId?: string };
       if (body.credentialType === "certificate") {
         if (!tokenRow.certificatePem || !tokenRow.privateKeyEncrypted || !tokenRow.thumbprintSha256) {
           // Only reachable with a token issued before certificate pairing
@@ -145,6 +155,11 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
           certificatePem: tokenRow.certificatePem,
           privateKeyEncrypted: tokenRow.privateKeyEncrypted,
           thumbprintSha256: tokenRow.thumbprintSha256,
+        };
+      } else if (body.credentialType === "managed-identity") {
+        credential = {
+          credentialType: "managed-identity",
+          ...(body.managedIdentityClientId ? { managedIdentityClientId: body.managedIdentityClientId } : {}),
         };
       } else {
         credential = { credentialType: "secret", clientSecretEncrypted: encrypt(body.clientSecret!) };
@@ -165,9 +180,9 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
           set: { value, updatedAt: new Date() },
         });
 
-      // The key now lives in the settings row; don't leave a second copy on a
-      // spent token.
-      if (credential.credentialType === "certificate") {
+      // The key now lives in the settings row (certificate) or was never used
+      // (secret, managed identity); either way, don't leave it on a spent token.
+      if (tokenRow.privateKeyEncrypted) {
         await db
           .update(tables.onboardingPairingTokens)
           .set({ privateKeyEncrypted: null })
@@ -257,7 +272,11 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
         summary:
           credential.credentialType === "certificate"
             ? `Instance paired with a customer-supplied Entra app registration (certificate ${credential.thumbprintSha256})`
-            : "Instance paired with a customer-supplied Entra app registration (client secret)",
+            : credential.credentialType === "managed-identity"
+              ? `Instance paired with a customer-supplied Entra app registration (managed identity${
+                  credential.managedIdentityClientId ? ` ${credential.managedIdentityClientId}` : ", system-assigned"
+                })`
+              : "Instance paired with a customer-supplied Entra app registration (client secret)",
         outcome: "success",
         responseStatus: 200,
       });

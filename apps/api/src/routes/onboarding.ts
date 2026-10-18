@@ -8,6 +8,7 @@ import {
   PARTNER_CENTER_SCOPES,
   currentScopeBaseline,
   scopeBaselinesMatch,
+  entraCredentialSource,
   type ScopeBaseline,
   type EntraCredentialSummary,
 } from "@patchpilot/shared";
@@ -193,6 +194,11 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
 
   async function loadCredential(): Promise<OnboardingReport["credential"]> {
     if (config.DEMO_MODE || !config.ENTRA_CONFIGURED) return null;
+    // A Key Vault credential's details live in the vault, not here; Azure
+    // tracks a vault certificate's expiry (and can auto-renew it) itself.
+    if (entraCredentialSource(config) === "key-vault") {
+      return { type: config.ENTRA_CREDENTIAL_TYPE, source: "key-vault" };
+    }
     if (config.ENTRA_CREDENTIAL_TYPE !== "certificate") return { type: config.ENTRA_CREDENTIAL_TYPE };
     // The expiry comes from the stored public certificate itself; the
     // private key in the same row is never read here.

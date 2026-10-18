@@ -104,6 +104,70 @@ Then open the printed URL — expect the "Pair this instance" screen over valid
 HTTPS. Complete setup via the onboarding pairing flow described in the main
 [README](../../README.md).
 
+## Authenticate with the VM's managed identity
+
+Optional. By default the instance pairs with a certificate it generates
+itself. On Azure it can instead authenticate to Entra as the VM's
+system-assigned managed identity, so it stores no credential at all. The
+deployment creates that identity and grants it nothing; it's unused until you
+opt in.
+
+1. Get the identity's object ID (also shown as the deployment's
+   `principalId` output):
+
+   ```bash
+   az vm show -g patchpilot-rg -n patchpilot-vm --query identity.principalId -o tsv
+   ```
+
+2. Download the pairing script from the instance (Setup → App Registration)
+   and run it with:
+
+   ```powershell
+   .\Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>
+   ```
+
+   The script adds a federated identity credential for that identity to the
+   app registration, and the instance asks Azure for the identity's token
+   whenever it needs to authenticate.
+
+The VM must be in a subscription whose directory is your MSP tenant, the
+same tenant as the app registration. A user-assigned identity also works:
+attach it to the VM, pass its object ID, and add
+`-ManagedIdentityClientId <its client ID>`.
+
+## Keep the credential in Key Vault
+
+Optional, and separate from the managed identity option above. If you'd rather
+pair with a secret or certificate but keep it in Azure Key Vault, the instance
+can read it with the VM's managed identity:
+
+- **Certificate** (recommended): create or import an RSA certificate in the
+  vault with a non-exportable key, upload its public part to the app
+  registration (Certificates & secrets), and give the VM's identity the
+  **Key Vault Certificate User** and **Key Vault Crypto User** roles on the
+  vault. Key Vault signs each sign-in; the private key never leaves the vault.
+  Then set in `.env`:
+
+  ```bash
+  ENTRA_CREDENTIAL_TYPE=certificate
+  ENTRA_KEY_VAULT_URL=https://<vault-name>.vault.azure.net
+  ENTRA_KEY_VAULT_CERTIFICATE_NAME=<certificate name>
+  ```
+
+  When the vault renews the certificate, upload the new public part to the app
+  before the old one expires. The instance picks up the new version within an
+  hour.
+
+- **Secret**: store the client secret in the vault, give the VM's identity the
+  **Key Vault Secrets User** role, and set `ENTRA_CREDENTIAL_TYPE=secret`,
+  `ENTRA_KEY_VAULT_URL` and `ENTRA_KEY_VAULT_SECRET_NAME`. The instance reads
+  it at startup, so restart it after rotating the secret.
+
+Keep `ENTRA_TENANT_ID` and `ENTRA_CLIENT_ID` set (or paired) as usual. Key
+Vault settings win over a paired credential of the same type. If the vault
+can't be reached at startup, the instance logs why and shows as unpaired
+rather than falling back to an older credential.
+
 ## Switch to a custom domain later
 
 ```bash

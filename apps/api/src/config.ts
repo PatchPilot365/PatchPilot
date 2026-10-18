@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ENTRA_CREDENTIAL_FIELDS, ENTRA_CREDENTIAL_TYPES, type EntraCredentialType } from "@patchpilot/shared";
+import {
+  ENTRA_CREDENTIAL_TYPES,
+  entraCredentialFields,
+  entraCredentialSource,
+  type EntraCredentialType,
+} from "@patchpilot/shared";
 
 /**
  * Environment configuration.
@@ -42,12 +47,20 @@ const EnvSchema = z.object({
   ENTRA_CLIENT_SECRET: z.string().optional(),
   // How the app proves its identity to Entra — see packages/graph/src/credential.ts.
   // "secret" (default) uses ENTRA_CLIENT_SECRET; "certificate" uses the key
-  // pair below. A paired instance never sets these by hand: load-env.ts fills
-  // them from the `entra-app-registration` settings row, where the private key
-  // lives encrypted under TOKEN_ENCRYPTION_KEY.
+  // pair below; "managed-identity" uses the Azure VM's managed identity as a
+  // federated credential. A paired instance never sets these by hand:
+  // load-env.ts fills them from the `entra-app-registration` settings row,
+  // where the private key lives encrypted under TOKEN_ENCRYPTION_KEY.
   ENTRA_CREDENTIAL_TYPE: z.enum(ENTRA_CREDENTIAL_TYPES).default("secret"),
   ENTRA_CERTIFICATE_PRIVATE_KEY: z.string().optional(),
   ENTRA_CERTIFICATE_THUMBPRINT_SHA256: z.string().optional(),
+  // Opt-in, Azure only. A user-assigned identity's client ID (blank means the
+  // VM's system-assigned identity), and a Key Vault secret or certificate to
+  // use instead of a local one. See infra/azure/README.md.
+  ENTRA_MANAGED_IDENTITY_CLIENT_ID: z.string().optional(),
+  ENTRA_KEY_VAULT_URL: z.string().optional(),
+  ENTRA_KEY_VAULT_SECRET_NAME: z.string().optional(),
+  ENTRA_KEY_VAULT_CERTIFICATE_NAME: z.string().optional(),
   // The delegated scope the app exposes on itself ("Expose an API"). Requested at
   // login so the engineer's session token is audience=PatchPilot, which is then
   // used as the OBO assertion. Defaults to api://{clientId}/access_as_user.
@@ -157,6 +170,10 @@ export interface Config {
   ENTRA_CREDENTIAL_TYPE: EntraCredentialType;
   ENTRA_CERTIFICATE_PRIVATE_KEY: string;
   ENTRA_CERTIFICATE_THUMBPRINT_SHA256: string;
+  ENTRA_MANAGED_IDENTITY_CLIENT_ID: string;
+  ENTRA_KEY_VAULT_URL: string;
+  ENTRA_KEY_VAULT_SECRET_NAME: string;
+  ENTRA_KEY_VAULT_CERTIFICATE_NAME: string;
   ENTRA_API_SCOPE: string;
   /**
    * True once a real Entra app registration is in place (env/`.env` or a
@@ -230,6 +247,10 @@ export function loadConfig(): Config {
       ENTRA_CREDENTIAL_TYPE: "secret",
       ENTRA_CERTIFICATE_PRIVATE_KEY: "",
       ENTRA_CERTIFICATE_THUMBPRINT_SHA256: "",
+      ENTRA_MANAGED_IDENTITY_CLIENT_ID: "",
+      ENTRA_KEY_VAULT_URL: "",
+      ENTRA_KEY_VAULT_SECRET_NAME: "",
+      ENTRA_KEY_VAULT_CERTIFICATE_NAME: "",
       ENTRA_API_SCOPE: env.ENTRA_API_SCOPE ?? `api://${clientId}/access_as_user`,
       ENTRA_CONFIGURED: true,
       SESSION_SECRET: env.SESSION_SECRET ?? DEMO_DEFAULTS.SESSION_SECRET,
@@ -274,14 +295,15 @@ export function loadConfig(): Config {
   // these fields again — see cloud-init.yaml) without requiring anyone to
   // hand-edit .env.
   //
-  // Which credential fields count depends on ENTRA_CREDENTIAL_TYPE (shared
-  // with packages/graph/src/env.ts via ENTRA_CREDENTIAL_FIELDS).
-  const entraFields = [
+  // Which credential fields count depends on ENTRA_CREDENTIAL_TYPE and on
+  // whether Key Vault holds the credential (shared with
+  // packages/graph/src/env.ts via entraCredentialFields).
+  const entraFields: Array<keyof typeof env> = [
     "ENTRA_TENANT_ID",
     "ENTRA_CLIENT_ID",
-    ...ENTRA_CREDENTIAL_FIELDS[env.ENTRA_CREDENTIAL_TYPE],
-  ] as const;
-  const TEMPLATE_PLACEHOLDERS: Partial<Record<(typeof entraFields)[number], string>> = {
+    ...(entraCredentialFields(env) as ReadonlyArray<keyof typeof env>),
+  ];
+  const TEMPLATE_PLACEHOLDERS: Partial<Record<keyof typeof env, string>> = {
     ENTRA_TENANT_ID: "00000000-0000-0000-0000-000000000000",
     ENTRA_CLIENT_ID: "00000000-0000-0000-0000-000000000000",
     ENTRA_CLIENT_SECRET: "replace-me",
@@ -302,7 +324,11 @@ export function loadConfig(): Config {
     throw new Error("Invalid production configuration");
   }
 
-  const entraConfigured = entraSetCount === entraFields.length;
+  // A Key Vault secret is fetched into ENTRA_CLIENT_SECRET at boot by
+  // load-env.ts; if that fetch failed, the instance isn't usable yet.
+  const entraConfigured =
+    entraSetCount === entraFields.length &&
+    (env.ENTRA_CREDENTIAL_TYPE !== "secret" || entraCredentialSource(env) !== "key-vault" || !!env.ENTRA_CLIENT_SECRET);
   return {
     ...(env as Config),
     ENTRA_TENANT_ID: env.ENTRA_TENANT_ID ?? "",
@@ -310,6 +336,10 @@ export function loadConfig(): Config {
     ENTRA_CLIENT_SECRET: env.ENTRA_CLIENT_SECRET ?? "",
     ENTRA_CERTIFICATE_PRIVATE_KEY: env.ENTRA_CERTIFICATE_PRIVATE_KEY ?? "",
     ENTRA_CERTIFICATE_THUMBPRINT_SHA256: env.ENTRA_CERTIFICATE_THUMBPRINT_SHA256 ?? "",
+    ENTRA_MANAGED_IDENTITY_CLIENT_ID: env.ENTRA_MANAGED_IDENTITY_CLIENT_ID ?? "",
+    ENTRA_KEY_VAULT_URL: env.ENTRA_KEY_VAULT_URL ?? "",
+    ENTRA_KEY_VAULT_SECRET_NAME: env.ENTRA_KEY_VAULT_SECRET_NAME ?? "",
+    ENTRA_KEY_VAULT_CERTIFICATE_NAME: env.ENTRA_KEY_VAULT_CERTIFICATE_NAME ?? "",
     ENTRA_API_SCOPE: env.ENTRA_API_SCOPE ?? `api://${env.ENTRA_CLIENT_ID ?? ""}/access_as_user`,
     ENTRA_CONFIGURED: entraConfigured,
   };

@@ -107,8 +107,9 @@ async function loadPairedEntraCredentials(): Promise<void> {
     const value = row.value as {
       clientId: string;
       tenantId: string;
-      credentialType?: "secret" | "certificate";
+      credentialType?: "secret" | "certificate" | "managed-identity";
       clientSecretEncrypted?: string;
+      managedIdentityClientId?: string;
       privateKeyEncrypted?: string;
       thumbprintSha256?: string;
     };
@@ -119,6 +120,12 @@ async function loadPairedEntraCredentials(): Promise<void> {
       process.env.ENTRA_CREDENTIAL_TYPE = "certificate";
       process.env.ENTRA_CERTIFICATE_PRIVATE_KEY = decryptPairedSecret(value.privateKeyEncrypted ?? "", tokenKey);
       process.env.ENTRA_CERTIFICATE_THUMBPRINT_SHA256 = value.thumbprintSha256 ?? "";
+    } else if (value.credentialType === "managed-identity") {
+      // Nothing secret to load: the VM's managed identity is the credential.
+      process.env.ENTRA_CREDENTIAL_TYPE = "managed-identity";
+      if (value.managedIdentityClientId) {
+        process.env.ENTRA_MANAGED_IDENTITY_CLIENT_ID = value.managedIdentityClientId;
+      }
     } else {
       process.env.ENTRA_CREDENTIAL_TYPE = "secret";
       process.env.ENTRA_CLIENT_SECRET = decryptPairedSecret(value.clientSecretEncrypted ?? "", tokenKey);
@@ -128,6 +135,40 @@ async function loadPairedEntraCredentials(): Promise<void> {
     // validation below still runs, and will reject the boot if no usable
     // ENTRA_* credentials are available from any source.
     console.error("[load-env] failed to load paired Entra credentials:", err);
+  }
+}
+
+/**
+ * Fetches the client secret from Azure Key Vault, using this VM's managed
+ * identity, when ENTRA_KEY_VAULT_SECRET_NAME is set (opt-in, Azure only — see
+ * infra/azure/README.md). Runs after loadPairedEntraCredentials so the
+ * paired row's credential type is already known, and wins over a paired or
+ * `.env` secret: naming a vault secret is an explicit operator choice. A
+ * failure is logged, not fatal — the instance then boots with
+ * ENTRA_CONFIGURED false rather than silently using a stale local secret.
+ * A rotated vault secret is picked up on the next restart.
+ */
+async function loadKeyVaultSecret(): Promise<void> {
+  if ((process.env.DEMO_MODE ?? "true") !== "false") return;
+  if ((process.env.ENTRA_CREDENTIAL_TYPE ?? "secret") !== "secret") return;
+  const vaultUrl = process.env.ENTRA_KEY_VAULT_URL;
+  const secretName = process.env.ENTRA_KEY_VAULT_SECRET_NAME;
+  if (!secretName) return;
+  delete process.env.ENTRA_CLIENT_SECRET;
+  if (!vaultUrl) return;
+
+  try {
+    // The keyvault subpath, not the package root: the root pulls in env.ts,
+    // which must not evaluate before this file has finished filling ENTRA_*.
+    const { getKeyVaultSecret, managedIdentityTokenGetter } = await import("@patchpilot/graph/keyvault");
+    process.env.ENTRA_CLIENT_SECRET = await getKeyVaultSecret(vaultUrl, secretName, {
+      getToken: managedIdentityTokenGetter(process.env.ENTRA_MANAGED_IDENTITY_CLIENT_ID || undefined),
+    });
+  } catch (err) {
+    console.error(
+      "[load-env] failed to fetch the Entra client secret from Key Vault:",
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
@@ -226,6 +267,7 @@ async function loadBootstrapAdminUpn(): Promise<void> {
 
 await loadDemoModeOverride();
 await loadPairedEntraCredentials();
+await loadKeyVaultSecret();
 await loadPairedAccessGroupIds();
 await loadCustomDomains();
 await loadBootstrapAdminUpn();

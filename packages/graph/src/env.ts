@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ENTRA_CREDENTIAL_FIELDS, ENTRA_CREDENTIAL_TYPES, type EntraCredentialType } from "@patchpilot/shared";
+import {
+  ENTRA_CREDENTIAL_TYPES,
+  entraCredentialFields,
+  entraCredentialSource,
+  type EntraCredentialType,
+} from "@patchpilot/shared";
 
 /**
  * Slim environment reader for the shared graph/auth layer.
@@ -19,6 +24,10 @@ const EnvSchema = z.object({
   ENTRA_CREDENTIAL_TYPE: z.enum(ENTRA_CREDENTIAL_TYPES).default("secret"),
   ENTRA_CERTIFICATE_PRIVATE_KEY: z.string().optional(),
   ENTRA_CERTIFICATE_THUMBPRINT_SHA256: z.string().optional(),
+  ENTRA_MANAGED_IDENTITY_CLIENT_ID: z.string().optional(),
+  ENTRA_KEY_VAULT_URL: z.string().optional(),
+  ENTRA_KEY_VAULT_SECRET_NAME: z.string().optional(),
+  ENTRA_KEY_VAULT_CERTIFICATE_NAME: z.string().optional(),
   ENTRA_API_SCOPE: z.string().optional(),
   TOKEN_ENCRYPTION_KEY: z.string().optional(),
   REDIS_URL: z.string().optional(),
@@ -36,6 +45,10 @@ export interface GraphEnv {
   ENTRA_CREDENTIAL_TYPE: EntraCredentialType;
   ENTRA_CERTIFICATE_PRIVATE_KEY: string;
   ENTRA_CERTIFICATE_THUMBPRINT_SHA256: string;
+  ENTRA_MANAGED_IDENTITY_CLIENT_ID: string;
+  ENTRA_KEY_VAULT_URL: string;
+  ENTRA_KEY_VAULT_SECRET_NAME: string;
+  ENTRA_KEY_VAULT_CERTIFICATE_NAME: string;
   ENTRA_API_SCOPE: string;
   TOKEN_ENCRYPTION_KEY: string;
   REDIS_URL: string;
@@ -77,6 +90,10 @@ export function loadEnv(): GraphEnv {
       ENTRA_CREDENTIAL_TYPE: "secret",
       ENTRA_CERTIFICATE_PRIVATE_KEY: "",
       ENTRA_CERTIFICATE_THUMBPRINT_SHA256: "",
+      ENTRA_MANAGED_IDENTITY_CLIENT_ID: "",
+      ENTRA_KEY_VAULT_URL: "",
+      ENTRA_KEY_VAULT_SECRET_NAME: "",
+      ENTRA_KEY_VAULT_CERTIFICATE_NAME: "",
       ENTRA_API_SCOPE: env.ENTRA_API_SCOPE ?? `api://${clientId}/access_as_user`,
       TOKEN_ENCRYPTION_KEY: env.TOKEN_ENCRYPTION_KEY ?? DEMO_DEFAULTS.TOKEN_ENCRYPTION_KEY,
       REDIS_URL: env.REDIS_URL ?? DEMO_DEFAULTS.REDIS_URL,
@@ -97,11 +114,11 @@ export function loadEnv(): GraphEnv {
     if (!v) problems.push(`${k} is required when DEMO_MODE=false`);
     else if (v === DEMO_DEFAULTS[k]) problems.push(`${k} still uses the demo placeholder`);
   }
-  const entraFields = [
+  const entraFields: Array<keyof typeof env> = [
     "ENTRA_TENANT_ID",
     "ENTRA_CLIENT_ID",
-    ...ENTRA_CREDENTIAL_FIELDS[env.ENTRA_CREDENTIAL_TYPE],
-  ] as const;
+    ...(entraCredentialFields(env) as ReadonlyArray<keyof typeof env>),
+  ];
   const entraSetCount = entraFields.filter((k) => env[k]).length;
   if (entraSetCount > 0 && entraSetCount < entraFields.length) {
     problems.push(`${entraFields.join(", ")} must be set together, or not at all`);
@@ -125,11 +142,20 @@ export function loadEnv(): GraphEnv {
     ENTRA_CREDENTIAL_TYPE: env.ENTRA_CREDENTIAL_TYPE,
     ENTRA_CERTIFICATE_PRIVATE_KEY: env.ENTRA_CERTIFICATE_PRIVATE_KEY ?? "",
     ENTRA_CERTIFICATE_THUMBPRINT_SHA256: env.ENTRA_CERTIFICATE_THUMBPRINT_SHA256 ?? "",
+    ENTRA_MANAGED_IDENTITY_CLIENT_ID: env.ENTRA_MANAGED_IDENTITY_CLIENT_ID ?? "",
+    ENTRA_KEY_VAULT_URL: env.ENTRA_KEY_VAULT_URL ?? "",
+    ENTRA_KEY_VAULT_SECRET_NAME: env.ENTRA_KEY_VAULT_SECRET_NAME ?? "",
+    ENTRA_KEY_VAULT_CERTIFICATE_NAME: env.ENTRA_KEY_VAULT_CERTIFICATE_NAME ?? "",
     ENTRA_API_SCOPE: env.ENTRA_API_SCOPE ?? `api://${env.ENTRA_CLIENT_ID ?? ""}/access_as_user`,
     TOKEN_ENCRYPTION_KEY: env.TOKEN_ENCRYPTION_KEY!,
     REDIS_URL: env.REDIS_URL!,
     DEMO_MODE: false,
-    ENTRA_CONFIGURED: entraSetCount === entraFields.length,
+    // A Key Vault secret is only usable once load-env.ts has fetched it; if
+    // that failed at boot, the instance runs unconfigured rather than
+    // handing MSAL an empty secret.
+    ENTRA_CONFIGURED:
+      entraSetCount === entraFields.length &&
+      (env.ENTRA_CREDENTIAL_TYPE !== "secret" || entraCredentialSource(env) !== "key-vault" || !!env.ENTRA_CLIENT_SECRET),
   };
 }
 
