@@ -7,6 +7,7 @@ import { z } from "zod";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db, tables } from "@patchpilot/db";
 import { encrypt, sha256Hex, auditSafe, generateSelfSignedCertificate } from "@patchpilot/graph";
+import { detectManagedIdentity } from "@patchpilot/graph/keyvault";
 import { SYSTEM_ACTORS, can, CREDENTIALS_ROTATED_CHANNEL, currentScopeBaseline } from "@patchpilot/shared";
 import { config } from "../config.js";
 import { connection } from "../queue.js";
@@ -63,8 +64,9 @@ const pairBodySchema = z.object({
   // there is no credential to send at all.
   credentialType: z.enum(["secret", "certificate", "managed-identity"]).default("secret"),
   clientSecret: z.string().min(1).optional(),
-  // Managed identity only: a user-assigned identity's client ID. Omitted for
-  // the VM's system-assigned identity, which needs no ID.
+  // Managed identity only, and required for it: the user-assigned identity's
+  // client ID. Entra only accepts a user-assigned identity as an app's
+  // federated credential, so there is no system-assigned case.
   managedIdentityClientId: z.string().regex(GUID_RE, "managedIdentityClientId must be a GUID").nullish(),
   // Optional: the UPN Deploy-PatchPilot.ps1 was signed in to Microsoft Graph
   // as when it created the app registration ($context.Account — see the
@@ -97,6 +99,9 @@ const pairBodySchema = z.object({
   })
   .refine((b) => b.credentialType === "managed-identity" || !b.managedIdentityClientId, {
     message: "managedIdentityClientId is only valid when credentialType is managed-identity",
+  })
+  .refine((b) => b.credentialType !== "managed-identity" || b.managedIdentityClientId, {
+    message: "managedIdentityClientId is required when credentialType is managed-identity",
   });
 
 export async function onboardingPairingRoutes(app: FastifyInstance): Promise<void> {
@@ -143,7 +148,7 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
             privateKeyEncrypted: string;
             thumbprintSha256: string;
           }
-        | { credentialType: "managed-identity"; managedIdentityClientId?: string };
+        | { credentialType: "managed-identity"; managedIdentityClientId: string };
       if (body.credentialType === "certificate") {
         if (!tokenRow.certificatePem || !tokenRow.privateKeyEncrypted || !tokenRow.thumbprintSha256) {
           // Only reachable with a token issued before certificate pairing
@@ -157,10 +162,7 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
           thumbprintSha256: tokenRow.thumbprintSha256,
         };
       } else if (body.credentialType === "managed-identity") {
-        credential = {
-          credentialType: "managed-identity",
-          ...(body.managedIdentityClientId ? { managedIdentityClientId: body.managedIdentityClientId } : {}),
-        };
+        credential = { credentialType: "managed-identity", managedIdentityClientId: body.managedIdentityClientId! };
       } else {
         credential = { credentialType: "secret", clientSecretEncrypted: encrypt(body.clientSecret!) };
       }
@@ -273,9 +275,7 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
           credential.credentialType === "certificate"
             ? `Instance paired with a customer-supplied Entra app registration (certificate ${credential.thumbprintSha256})`
             : credential.credentialType === "managed-identity"
-              ? `Instance paired with a customer-supplied Entra app registration (managed identity${
-                  credential.managedIdentityClientId ? ` ${credential.managedIdentityClientId}` : ", system-assigned"
-                })`
+              ? `Instance paired with a customer-supplied Entra app registration (managed identity ${credential.managedIdentityClientId})`
               : "Instance paired with a customer-supplied Entra app registration (client secret)",
         outcome: "success",
         responseStatus: 200,
@@ -331,6 +331,19 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       thumbprintSha256: certificate.thumbprintSha256,
     });
 
+    // On an Azure VM with a user-assigned managed identity configured (the
+    // Azure deployment sets ENTRA_MANAGED_IDENTITY_CLIENT_ID), pre-fill the
+    // script with it so it pairs with that (nothing stored anywhere) instead
+    // of the certificate above, which stays in the script as the fallback.
+    // The script only uses it when the identity's tenant is the one it pairs
+    // in. Only a user-assigned identity can be an app's federated
+    // credential, so with no client ID configured there's nothing to probe
+    // for and the script is unchanged.
+    const managedIdentityClientId = config.ENTRA_MANAGED_IDENTITY_CLIENT_ID || undefined;
+    const managedIdentity = managedIdentityClientId
+      ? await detectManagedIdentity({ clientId: managedIdentityClientId })
+      : null;
+
     // Strip a leading UTF-8 BOM defensively (node's readFileSync("utf8") does
     // not do this itself, unlike PowerShell's own .ps1 file loader). A BOM
     // survives harmlessly when this script is downloaded and run as a file,
@@ -360,6 +373,14 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       .replace(
         /\{\{CERTIFICATE_BASE64\}\}/g,
         certificate.certificatePem.replace(/-----[A-Z ]+-----|\s/g, ""),
+      )
+      // Left as placeholders when no managed identity was detected; the
+      // script treats those as "not supplied".
+      .replace(/\{\{MANAGED_IDENTITY_OBJECT_ID\}\}/g, managedIdentity?.objectId ?? "{{MANAGED_IDENTITY_OBJECT_ID}}")
+      .replace(/\{\{MANAGED_IDENTITY_TENANT_ID\}\}/g, managedIdentity?.tenantId ?? "{{MANAGED_IDENTITY_TENANT_ID}}")
+      .replace(
+        /\{\{MANAGED_IDENTITY_CLIENT_ID\}\}/g,
+        managedIdentity ? managedIdentityClientId! : "{{MANAGED_IDENTITY_CLIENT_ID}}",
       );
 
     await auditSafe({
@@ -368,7 +389,7 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       method: "GET",
       action: "onboarding:pairing-token-issued",
       resourceType: "application",
-      summary: `Pairing script downloaded (expires ${expiresAt.toISOString()})`,
+      summary: `Pairing script downloaded (expires ${expiresAt.toISOString()})${managedIdentity ? ", Azure managed identity detected" : ""}`,
       outcome: "success",
       responseStatus: 200,
     });

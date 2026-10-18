@@ -54,9 +54,10 @@ const EnvSchema = z.object({
   ENTRA_CREDENTIAL_TYPE: z.enum(ENTRA_CREDENTIAL_TYPES).default("secret"),
   ENTRA_CERTIFICATE_PRIVATE_KEY: z.string().optional(),
   ENTRA_CERTIFICATE_THUMBPRINT_SHA256: z.string().optional(),
-  // Opt-in, Azure only. A user-assigned identity's client ID (blank means the
-  // VM's system-assigned identity), and a Key Vault secret or certificate to
-  // use instead of a local one. See infra/azure/README.md.
+  // Azure only. The VM's user-assigned managed identity's client ID (the
+  // Azure deployment sets it; managed-identity pairing needs it), and,
+  // opt-in, a Key Vault secret or certificate to use instead of a local one.
+  // See infra/azure/README.md.
   ENTRA_MANAGED_IDENTITY_CLIENT_ID: z.string().optional(),
   ENTRA_KEY_VAULT_URL: z.string().optional(),
   ENTRA_KEY_VAULT_SECRET_NAME: z.string().optional(),

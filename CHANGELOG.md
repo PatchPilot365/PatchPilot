@@ -12,12 +12,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Changed: a pairing script downloaded from an instance on an Azure VM now
+  pairs with the VM's managed identity automatically. The instance detects
+  the identity and pre-fills it, so there's no `principalId` to look up. If
+  the VM's subscription is in a different directory from the MSP tenant,
+  the script says so and uses the instance's certificate instead.
+  `-CredentialType Certificate` still forces the certificate. Off Azure,
+  nothing changes. The Azure deployment now creates a user-assigned identity,
+  `patchpilot-identity`, instead of a system-assigned one, because Entra only
+  accepts a user-assigned identity as an app's federated credential. It
+  outputs `managedIdentityClientId` and writes it to the VM's `.env` as
+  `ENTRA_MANAGED_IDENTITY_CLIENT_ID`; managed-identity pairing now requires
+  that client ID.
 - Added: an instance on an Azure VM can authenticate to Entra with the VM's
   managed identity, so it stores no credential at all. Run the pairing script
-  with `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`;
-  it registers the identity as a federated credential on the app. The Azure
-  deployment now gives the VM a system-assigned identity (with no roles) and
-  outputs its `principalId`.
+  with `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>
+  -ManagedIdentityClientId <clientId>`; it registers the identity as a
+  federated credential on the app. The Azure deployment gives the VM a
+  managed identity with no roles and outputs its `principalId`.
 - Added: the client secret or certificate can be kept in Azure Key Vault and
   read with the VM's managed identity (`ENTRA_KEY_VAULT_URL` plus
   `ENTRA_KEY_VAULT_SECRET_NAME` or `ENTRA_KEY_VAULT_CERTIFICATE_NAME`). A Key

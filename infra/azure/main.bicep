@@ -37,7 +37,18 @@ param repoRef string = 'main'
 var vmName = 'patchpilot-vm'
 var resolvedDomain = empty(customDomain) ? publicIp.properties.dnsSettings.fqdn : customDomain
 var cloudInitRaw = loadTextContent('cloud-init.yaml')
-var cloudInitFilled = replace(replace(replace(replace(cloudInitRaw, '__PP_DOMAIN__', resolvedDomain), '__ADMIN_USER__', adminUsername), '__REPO_URL__', repoUrl), '__REPO_REF__', repoRef)
+var cloudInitFilled = replace(replace(replace(replace(replace(cloudInitRaw, '__PP_DOMAIN__', resolvedDomain), '__ADMIN_USER__', adminUsername), '__REPO_URL__', repoUrl), '__REPO_REF__', repoRef), '__MI_CLIENT_ID__', identity.properties.clientId)
+
+// The identity PatchPilot authenticates to Entra as: the pairing script
+// registers it on the app registration as a federated credential, so the
+// instance stores no credential. It must be user-assigned, because Entra only
+// accepts a user-assigned identity as an app's federated credential. Being a
+// separate resource also means a rebuilt VM can reuse it without re-pairing.
+// Granted no Azure roles here. See README.md.
+resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'patchpilot-identity'
+  location: location
+}
 
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
   name: 'patchpilot-vnet'
@@ -155,11 +166,11 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
 resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   name: vmName
   location: location
-  // Unused unless the operator opts in: lets PatchPilot authenticate to Entra
-  // as this VM (Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity) and/or
-  // read a credential from Key Vault. Granted no roles here. See README.md.
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
   }
   properties: {
     hardwareProfile: {
@@ -248,5 +259,7 @@ resource waitForAppReady 'Microsoft.Compute/virtualMachines/runCommands@2024-03-
 output fqdn string = resolvedDomain
 output publicIpAddress string = publicIp.properties.ipAddress
 output url string = 'https://${resolvedDomain}'
-@description('Object (principal) ID of the VM system-assigned managed identity, for Deploy-PatchPilot.ps1 -ManagedIdentityObjectId.')
-output principalId string = vm.identity.principalId
+@description('Object (principal) ID of the VM user-assigned managed identity, for Deploy-PatchPilot.ps1 -ManagedIdentityObjectId.')
+output principalId string = identity.properties.principalId
+@description('Client ID of the VM user-assigned managed identity, written to ENTRA_MANAGED_IDENTITY_CLIENT_ID in the instance .env.')
+output managedIdentityClientId string = identity.properties.clientId

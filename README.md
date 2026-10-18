@@ -43,8 +43,8 @@ across many GDAP-linked customer tenants.
 8. **Secrets in `.env`** with locked-down file permissions, or, for a paired
    instance, encrypted in the database. A paired instance authenticates to
    Entra with a certificate whose private key never leaves the server. On an
-   Azure VM it can instead use the VM's managed identity (nothing stored) or
-   a certificate or secret kept in Azure Key Vault — both opt-in. Engineers'
+   Azure VM it uses the VM's managed identity by default (nothing stored), or,
+   opt-in, a certificate or secret kept in Azure Key Vault. Engineers'
    cached tokens in Redis are encrypted and bound to their own cache key, and
    Redis can require a password (`REDIS_PASSWORD`).
 
@@ -126,8 +126,9 @@ domain if you have one), and an Ubuntu VM that installs Docker and brings up
 this exact stack on first boot — no SSH required for setup or day-to-day
 operation. See [`infra/azure/README.md`](infra/azure/README.md) for the full
 runbook, including switching to a custom domain later and updating the deploy.
-The VM gets a system-assigned managed identity with no roles; you can opt in to
-authenticating with it, or to keeping the app credential in Key Vault — see
+The VM gets a user-assigned managed identity with no roles, and the pairing
+script authenticates with it automatically. Keeping the app credential in Key
+Vault instead is opt-in — see
 [Authenticate with the VM's managed identity](infra/azure/README.md#authenticate-with-the-vms-managed-identity)
 and [Keep the credential in Key Vault](infra/azure/README.md#keep-the-credential-in-key-vault).
 

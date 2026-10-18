@@ -46,5 +46,5 @@ These hold regardless of which path you choose:
 8. **Secrets live in `.env`** with locked-down file permissions, or, for a
    paired instance, encrypted in the database. A paired instance
    authenticates to Entra with a certificate whose private key never leaves
-   the server. On Azure it can instead use the VM's managed identity, or a
-   credential kept in Azure Key Vault — both opt-in.
+   the server. On an Azure VM it uses the VM's managed identity by default,
+   or, opt-in, a credential kept in Azure Key Vault.

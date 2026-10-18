@@ -1,20 +1,22 @@
 import Fastify from "fastify";
 import { X509Certificate, createPrivateKey, createPublicKey } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Fastify `.inject()` coverage for the pairing flow's credential handling,
  * following domains.test.ts's harness: `@patchpilot/db` mocked with an
  * in-memory, table-keyed store, drizzle's predicate builders swapped for
  * plain-object ones so the single-use token UPDATE really narrows to one
- * row, and every outward boundary (audit, Redis publish, process exit) mocked.
+ * row, and every outward boundary (audit, Redis publish, process exit, the
+ * Azure managed identity probe) mocked.
  */
 
-const { tableRows, auditSafeMock, publishMock, exitAfterReplyMock } = vi.hoisted(() => ({
+const { tableRows, auditSafeMock, publishMock, exitAfterReplyMock, detectManagedIdentityMock } = vi.hoisted(() => ({
   tableRows: new Map<unknown, Record<string, unknown>[]>(),
   auditSafeMock: vi.fn(),
   publishMock: vi.fn(),
   exitAfterReplyMock: vi.fn(),
+  detectManagedIdentityMock: vi.fn(),
 }));
 
 type Row = Record<string, unknown>;
@@ -115,6 +117,8 @@ vi.mock("@patchpilot/graph", async (importOriginal) => {
   return { ...actual, auditSafe: auditSafeMock };
 });
 
+vi.mock("@patchpilot/graph/keyvault", () => ({ detectManagedIdentity: detectManagedIdentityMock }));
+
 vi.mock("../queue.js", () => ({ connection: { publish: publishMock } }));
 vi.mock("../restart-after-reply.js", () => ({ exitAfterReply: exitAfterReplyMock }));
 
@@ -162,6 +166,7 @@ beforeEach(() => {
   auditSafeMock.mockReset();
   publishMock.mockReset().mockResolvedValue(1);
   exitAfterReplyMock.mockReset();
+  detectManagedIdentityMock.mockReset().mockResolvedValue(null);
 });
 
 describe("GET /api/onboarding/pairing-script", () => {
@@ -185,6 +190,48 @@ describe("GET /api/onboarding/pairing-script", () => {
         .export({ type: "spki", format: "der" })
         .equals(cert.publicKey.export({ type: "spki", format: "der" })),
     ).toBe(true);
+  });
+
+  it("doesn't probe for a managed identity with no client ID configured", async () => {
+    const app = await buildApp();
+    const { script, certificateBase64 } = await downloadScript(app);
+    expect(script).toContain('$DetectedManagedIdentityObjectId = "{{MANAGED_IDENTITY_OBJECT_ID}}"');
+    expect(script).toContain('$DetectedManagedIdentityTenantId = "{{MANAGED_IDENTITY_TENANT_ID}}"');
+    expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
+    expect(certificateBase64).not.toMatch(/^\{\{/);
+    expect(detectManagedIdentityMock).not.toHaveBeenCalled();
+  });
+
+  describe("with a user-assigned identity configured", () => {
+    const clientId = "c0000000-0000-4000-8000-000000000003";
+    beforeEach(() => {
+      Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: clientId });
+    });
+    afterEach(() => {
+      Object.assign(config, { ENTRA_MANAGED_IDENTITY_CLIENT_ID: "" });
+    });
+
+    it("pre-fills the identity on Azure, keeping the certificate as the fallback", async () => {
+      const objectId = "a0000000-0000-4000-8000-000000000001";
+      const tenantId = "b0000000-0000-4000-8000-000000000002";
+      detectManagedIdentityMock.mockResolvedValue({ objectId, tenantId });
+      const app = await buildApp();
+      const { script, certificateBase64 } = await downloadScript(app);
+      expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId });
+      expect(script).toContain(`$DetectedManagedIdentityObjectId = "${objectId}"`);
+      expect(script).toContain(`$DetectedManagedIdentityTenantId = "${tenantId}"`);
+      expect(script).toContain(`$DetectedManagedIdentityClientId = "${clientId}"`);
+      expect(certificateBase64).not.toMatch(/^\{\{/);
+      expect(auditSafeMock.mock.calls[0]![0].summary).toContain("Azure managed identity detected");
+    });
+
+    it("leaves the placeholders alone when Azure doesn't answer", async () => {
+      const app = await buildApp();
+      const { script } = await downloadScript(app);
+      expect(detectManagedIdentityMock).toHaveBeenCalledWith({ clientId });
+      expect(script).toContain('$DetectedManagedIdentityObjectId = "{{MANAGED_IDENTITY_OBJECT_ID}}"');
+      expect(script).toContain('$DetectedManagedIdentityClientId = "{{MANAGED_IDENTITY_CLIENT_ID}}"');
+    });
   });
 
   it("leaves the tenant ID as a placeholder while unpaired", async () => {
@@ -304,24 +351,12 @@ describe("POST /api/onboarding/pair", () => {
     expect(tokenRows()[0]!.privateKeyEncrypted).toBeNull();
   });
 
-  it("pairs a system-assigned managed identity without a client ID", async () => {
-    const app = await buildApp();
-    const { token } = await downloadScript(app);
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/onboarding/pair",
-      payload: { token, clientId: "client-1", tenantId: "tenant-1", credentialType: "managed-identity" },
-    });
-    expect(res.statusCode).toBe(200);
-    const value = settingsRow("entra-app-registration")!.value as Row;
-    expect(value.credentialType).toBe("managed-identity");
-    expect(value).not.toHaveProperty("managedIdentityClientId");
-  });
-
-  it("rejects a managed identity client ID that isn't a GUID, or on another credential type, before spending the token", async () => {
+  it("rejects a managed identity client ID that is missing, isn't a GUID, or is on another credential type, before spending the token", async () => {
     const app = await buildApp();
     const { token } = await downloadScript(app);
     for (const payload of [
+      // Entra only accepts a user-assigned identity as a federated credential.
+      { token, clientId: "c", tenantId: "t", credentialType: "managed-identity" },
       { token, clientId: "c", tenantId: "t", credentialType: "managed-identity", managedIdentityClientId: "nope" },
       {
         token,

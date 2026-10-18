@@ -12,9 +12,10 @@ export type EntraCredentialType = (typeof ENTRA_CREDENTIAL_TYPES)[number];
  * The env fields that together make up the credential for each type, on top
  * of ENTRA_TENANT_ID/ENTRA_CLIENT_ID which every type needs. Shared by
  * apps/api/src/config.ts and packages/graph/src/env.ts so their "set
- * together, or not at all" checks can't drift. A managed identity needs
- * nothing extra: ENTRA_MANAGED_IDENTITY_CLIENT_ID is only for a
- * user-assigned identity, and the VM's system-assigned one needs no ID.
+ * together, or not at all" checks can't drift. A managed identity has no
+ * credential fields: ENTRA_MANAGED_IDENTITY_CLIENT_ID only says which
+ * identity to ask Azure for. A paired instance sets it from its settings
+ * row (load-env.ts), and pairing requires it.
  */
 export const ENTRA_CREDENTIAL_FIELDS = {
   secret: ["ENTRA_CLIENT_SECRET"],
