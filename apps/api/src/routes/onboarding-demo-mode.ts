@@ -64,10 +64,11 @@ export async function onboardingDemoModeRoutes(app: FastifyInstance): Promise<vo
       // this process's own restart-after-reply below picks the flag straight
       // out of the DB on its next boot (see load-env.ts's
       // loadDemoModeOverride).
+      // Exit scheduled before publishing — see isExitAfterReplyPending.
+      exitAfterReply(reply);
       await connection.publish(CREDENTIALS_ROTATED_CHANNEL, "demo-mode-enabled").catch(() => undefined);
 
       reply.send({ enabled: true });
-      exitAfterReply(reply);
     },
   );
 }

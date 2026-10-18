@@ -90,6 +90,7 @@ two valid states before pairing.
 | `PP_DOMAIN` | Bare hostname Caddy serves and requests a Let's Encrypt certificate for. |
 | `AUTH_REDIRECT_URI` | Entra app redirect URI — must exactly match the app registration. |
 | `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` | Filled in automatically by the pairing script. Leave blank until then. |
+| `ENTRA_CREDENTIAL_TYPE` / `ENTRA_CERTIFICATE_PRIVATE_KEY` / `ENTRA_CERTIFICATE_THUMBPRINT_SHA256` | Optional. `secret` (default) or `certificate`. A paired instance sets these itself from the certificate it generated during pairing; only set them by hand to use your own certificate. |
 | `SESSION_SECRET` / `TOKEN_ENCRYPTION_KEY` | 32-byte base64 keys — generate with `openssl rand -base64 32`. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_HOST` / `POSTGRES_PORT` / `DATABASE_URL` | Database connection. |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_URL` | Job queue and token cache backing. |

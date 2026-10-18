@@ -39,6 +39,9 @@ function loadRootEnv(): void {
 
 loadRootEnv();
 
+/** Scrubbed from process.env at the end of this module — see there. */
+const SECRET_ENV_VARS = ["ENTRA_CLIENT_SECRET", "ENTRA_CERTIFICATE_PRIVATE_KEY", "TOKEN_ENCRYPTION_KEY"] as const;
+
 // AES-256-GCM decrypt, duplicated from packages/graph/src/crypto.ts (must stay
 // byte-compatible with its encrypt()) rather than imported: that package's
 // env.ts validates ENTRA_* eagerly at import time and would throw on a freshly
@@ -97,11 +100,29 @@ async function loadPairedEntraCredentials(): Promise<void> {
       .where(eq(tables.settings.key, "entra-app-registration"));
     if (!row) return;
 
-    const value = row.value as { clientId: string; tenantId: string; clientSecretEncrypted: string };
+    // credentialType is absent on every row written before certificate
+    // pairing existed — those are all client secrets. The row's type always
+    // wins over ENTRA_CREDENTIAL_TYPE from env/`.env`, same precedence as the
+    // credentials themselves.
+    const value = row.value as {
+      clientId: string;
+      tenantId: string;
+      credentialType?: "secret" | "certificate";
+      clientSecretEncrypted?: string;
+      privateKeyEncrypted?: string;
+      thumbprintSha256?: string;
+    };
     const tokenKey = process.env.TOKEN_ENCRYPTION_KEY ?? "demo-encryption-key-not-for-production-0";
     process.env.ENTRA_CLIENT_ID = value.clientId;
     process.env.ENTRA_TENANT_ID = value.tenantId;
-    process.env.ENTRA_CLIENT_SECRET = decryptPairedSecret(value.clientSecretEncrypted, tokenKey);
+    if (value.credentialType === "certificate") {
+      process.env.ENTRA_CREDENTIAL_TYPE = "certificate";
+      process.env.ENTRA_CERTIFICATE_PRIVATE_KEY = decryptPairedSecret(value.privateKeyEncrypted ?? "", tokenKey);
+      process.env.ENTRA_CERTIFICATE_THUMBPRINT_SHA256 = value.thumbprintSha256 ?? "";
+    } else {
+      process.env.ENTRA_CREDENTIAL_TYPE = "secret";
+      process.env.ENTRA_CLIENT_SECRET = decryptPairedSecret(value.clientSecretEncrypted ?? "", tokenKey);
+    }
   } catch (err) {
     // Boot must not hard-fail on a transient DB hiccup here — config.ts's own
     // validation below still runs, and will reject the boot if no usable
@@ -225,6 +246,7 @@ await loadBootstrapAdminUpn();
 // module holding a reference to them sees the corrected values regardless
 // of which import won the race. Safe to run unconditionally: on a build
 // where the ordering guarantee *did* hold, this recomputes identical values.
+let reconciled = true;
 try {
   const configModule = await import("./config.js");
   const fresh = configModule.loadConfig();
@@ -235,6 +257,7 @@ try {
   configModule.corsOrigins.length = 0;
   configModule.corsOrigins.push(...configModule.deriveCorsOrigins(fresh, freshWebOrigins));
 } catch (err) {
+  reconciled = false;
   console.error("[load-env] failed to reconcile config with loaded env:", err);
 }
 
@@ -253,5 +276,20 @@ try {
   const graphEnvModule = await import("@patchpilot/graph");
   Object.assign(graphEnvModule.env, graphEnvModule.loadEnv());
 } catch (err) {
+  reconciled = false;
   console.error("[load-env] failed to reconcile @patchpilot/graph env with loaded env:", err);
+}
+
+// The decrypted Entra credential and TOKEN_ENCRYPTION_KEY now live only in
+// the config/env singletons patched above — nothing reads them from
+// process.env again. Removing them keeps them out of anything that dumps
+// process.env wholesale (the most common payload of a malicious npm
+// package, and error reporters that attach the environment) and out of any
+// child process a dependency spawns, which inherits process.env. It doesn't
+// stop code that targets the singletons directly, and on Linux the
+// process's original environment (Compose-injected values) is still in
+// /proc/self/environ; .env-file and DB-sourced values never were. Skipped if
+// reconciliation failed, so a broken boot still has them to fall back on.
+if (reconciled) {
+  for (const name of SECRET_ENV_VARS) delete process.env[name];
 }

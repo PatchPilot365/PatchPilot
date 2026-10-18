@@ -9,12 +9,14 @@ import {
   currentScopeBaseline,
   scopeBaselinesMatch,
   type ScopeBaseline,
+  type EntraCredentialSummary,
 } from "@patchpilot/shared";
 import {
   getCca,
   APP_REGISTRATION_SYNC_SCOPES,
   APP_REGISTRATION_TEST_SCOPES,
   auditSafe,
+  describeEntraCredential,
   type ScopeStatusEntry,
   type LicenseCheckResult,
 } from "@patchpilot/graph";
@@ -128,6 +130,10 @@ interface OnboardingReport {
    * `entra-scope-status` row written before this field shipped still parses.
    */
   scopeStatus: { checkedAt: string; results: ScopeStatusEntry[]; licensing?: LicenseCheckResult } | null;
+  /** How this instance authenticates to Entra (client secret or the
+   * instance's own certificate, with its expiry) — null in demo mode or
+   * before the instance has an app registration at all. */
+  credential: EntraCredentialSummary | null;
   consentTargets: ConsentTarget[];
 }
 
@@ -185,14 +191,30 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     return { checkedAt: value.checkedAt, redirectUris: value.redirectUris };
   }
 
+  async function loadCredential(): Promise<OnboardingReport["credential"]> {
+    if (config.DEMO_MODE || !config.ENTRA_CONFIGURED) return null;
+    if (config.ENTRA_CREDENTIAL_TYPE !== "certificate") return { type: config.ENTRA_CREDENTIAL_TYPE };
+    // The expiry comes from the stored public certificate itself; the
+    // private key in the same row is never read here.
+    const [row] = await db
+      .select()
+      .from(tables.settings)
+      .where(eq(tables.settings.key, "entra-app-registration"));
+    return describeEntraCredential({
+      credentialType: "certificate",
+      certificatePem: (row?.value as { certificatePem?: string } | undefined)?.certificatePem,
+    });
+  }
+
   app.get("/api/onboarding", async () => {
     // Admin consent redirects back to the registered redirect URI.
     const redirectUri = config.AUTH_REDIRECT_URI;
-    const [tenants, syncNeeded, scopeStatus, liveRedirectUris] = await Promise.all([
+    const [tenants, syncNeeded, scopeStatus, liveRedirectUris, credential] = await Promise.all([
       allTenants(),
       scopesSyncNeeded(),
       loadScopeStatus(),
       loadLiveRedirectUris(),
+      loadCredential(),
     ]);
 
     const consentTargets: ConsentTarget[] = tenants
@@ -224,6 +246,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
         partnerCenter: PARTNER_CENTER_SCOPES,
       },
       scopeStatus,
+      credential,
       consentTargets,
     };
     return report;

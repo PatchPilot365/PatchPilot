@@ -27,6 +27,11 @@
     .\Deploy-PatchPilot.ps1 -MspTenantId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" -RotateClientSecret
 
 .EXAMPLE
+    # A personalized download (Setup -> App Registration) pairs with the
+    # instance's own certificate by default. Force a client secret instead:
+    .\Deploy-PatchPilot.ps1 -CredentialType Secret
+
+.EXAMPLE
     .\Deploy-PatchPilot.ps1 -MspTenantId "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" -Uninstall
 
 .EXAMPLE
@@ -47,8 +52,16 @@ param(
     # left for them to type. Still explicitly overridable, e.g. to target a
     # tenant other than the one the current session happens to be signed
     # into.
+    #
+    # The {{...}} default is a template placeholder (same mechanism as
+    # $RedirectUri below): a download from an instance that is already
+    # paired substitutes that instance's own tenant ID, so re-pairing never
+    # depends on auto-detection - live-observed picking up a stale Az/az
+    # login for an unrelated tenant on an admin's PC (AADSTS50020). Left
+    # un-substituted on a first pairing, where the instance doesn't know its
+    # tenant yet, and cleared right after $ErrorActionPreference below.
     [Parameter(Mandatory = $false)]
-    [string] $MspTenantId,
+    [string] $MspTenantId = "{{MSP_TENANT_ID}}",
 
     # The {{...}} default below is a template placeholder, substituted with
     # this instance's real AUTH_REDIRECT_URI on a personalized download (see
@@ -112,7 +125,25 @@ param(
     [string] $InstanceUrl = "{{INSTANCE_URL}}",
 
     [Parameter(Mandatory = $false)]
-    [string] $PairingToken = "{{PAIRING_TOKEN}}"
+    [string] $PairingToken = "{{PAIRING_TOKEN}}",
+
+    # How the paired instance authenticates to Entra. "Auto" (default) uses
+    # the instance-generated certificate when this is a personalized
+    # download that carries one (see $CertificateBase64 below), otherwise a
+    # client secret - so a self-hoster running this file from a git clone
+    # gets exactly the old behavior. "Secret" forces a client secret even
+    # when a certificate is available. A certificate is preferred because
+    # the private key never leaves the instance: nothing replayable is
+    # created in Entra, sent over the network, or written to disk here.
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("Auto", "Certificate", "Secret")]
+    [string] $CredentialType = "Auto",
+
+    # Public X.509 certificate (base64 DER) the instance generated for this
+    # pairing; its private key stays on the instance. Template placeholder,
+    # substituted on a personalized download like $PairingToken above.
+    [Parameter(Mandatory = $false)]
+    [string] $CertificateBase64 = "{{CERTIFICATE_BASE64}}"
 )
 
 $ErrorActionPreference = "Stop"
@@ -129,6 +160,12 @@ $ErrorActionPreference = "Stop"
 # against itself and always be true.
 if ($RedirectUri.StartsWith("{{") -and $RedirectUri.EndsWith("}}")) {
     $RedirectUri = "http://localhost:5173/auth/callback"
+}
+if ($MspTenantId.StartsWith("{{") -and $MspTenantId.EndsWith("}}")) {
+    $MspTenantId = $null
+}
+elseif ($MspTenantId -and -not $PSBoundParameters.ContainsKey("MspTenantId")) {
+    Write-Host "Using tenant $MspTenantId - the tenant $InstanceUrl is already paired with. Pass -MspTenantId to override." -ForegroundColor DarkGray
 }
 
 # See the $MspTenantId param comment above. Tries Get-AzContext first since
@@ -550,6 +587,61 @@ function Get-GraphAllPages {
     return @($allItems | Where-Object { $_ })
 }
 
+function Get-AppKeyCredentials {
+    <#
+        Returns the app's keyCredentials exactly as Graph's REST API returns
+        them (raw JSON objects as hashtables), for sending back unchanged in a
+        PATCH. Graph rejects a PATCH that alters an existing entry in any way
+        ("KeyNotUpdatable: Update to existing credential with KeyId '...' is
+        not allowed") - live-observed when the entries were rebuilt from
+        Get-MgApplication's typed objects with only a subset of fields
+        (customKeyIdentifier dropped). Round-tripping the raw objects
+        (key: null, everything else verbatim) is what keeps them as-is.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ApplicationObjectId
+    )
+
+    $response = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/applications/$ApplicationObjectId`?`$select=keyCredentials" -ErrorAction Stop
+    return @($response.keyCredentials | Where-Object { $_ })
+}
+
+function Set-AppKeyCredentials {
+    <#
+        PATCHes the app's whole keyCredentials collection (the only way Graph
+        offers to add or remove a certificate without proof-of-possession of
+        an existing key). Existing entries must come from
+        Get-AppKeyCredentials unchanged; any DateTime the SDK parsed is
+        written back as ISO 8601 UTC so Windows PowerShell 5.1's
+        ConvertTo-Json doesn't emit its "/Date(...)/" form.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ApplicationObjectId,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]] $KeyCredentials
+    )
+
+    $normalized = @(
+        $KeyCredentials | ForEach-Object {
+            $entry = [ordered]@{}
+            foreach ($name in $_.Keys) {
+                $value = $_[$name]
+                if ($value -is [datetime]) {
+                    $value = $value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ")
+                }
+                $entry[$name] = $value
+            }
+            $entry
+        }
+    )
+    $body = ConvertTo-Json -InputObject @{ keyCredentials = $normalized } -Depth 5
+    Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/v1.0/applications/$ApplicationObjectId" -Body $body -ContentType "application/json" -ErrorAction Stop | Out-Null
+}
+
 function Test-HasEntraIdP1OrHigher {
     <#
         Role-assignable security groups (isAssignableToRole: true) - what
@@ -861,6 +953,17 @@ $pairingRequested = $InstanceUrl -and $PairingToken `
     -and -not ($PairingToken.StartsWith("{{") -and $PairingToken.EndsWith("}}"))
 $paired = $false
 $secretPersisted = $false
+
+# Same "{{...}} means not substituted" check as $pairingRequested above. A
+# certificate is only usable together with pairing: the private key lives on
+# the instance, so there is nothing this script could write to a local .env.
+$certificateAvailable = $CertificateBase64 `
+    -and -not ($CertificateBase64.StartsWith("{{") -and $CertificateBase64.EndsWith("}}"))
+$useCertificate = $pairingRequested -and $certificateAvailable -and $CredentialType -ne "Secret"
+if ($CredentialType -eq "Certificate" -and -not $useCertificate) {
+    throw "-CredentialType Certificate needs a personalized download from your PatchPilot instance (Setup -> App Registration), which carries the instance's certificate and a pairing token."
+}
+$certificateAdded = $null
 
 try {
     Ensure-Folder -Path $OutputFolder
@@ -1510,44 +1613,73 @@ try {
             }
     )
 
-    if ($RotateClientSecret) {
-        Write-WarningMessage "RotateClientSecret specified. A new secret will be generated."
-    }
-
-    # An existing secret proves a *usable* app registration exists, but its
-    # value can never be retrieved from Entra ID again - and step [15/15]
-    # needs the real value to hand to the instance. Reusing it silently would
-    # mean pairing can never complete on this run, with no error anywhere.
-    $needsFreshSecretForPairing = $false
-    if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret -and $pairingRequested) {
-        Write-WarningMessage "Existing client secret values cannot be retrieved from Entra ID, but this instance still needs pairing."
-        $rotateQuery = "App registration $($app.AppId) already has a valid secret, but Entra ID never returns a secret's value after creation, so the existing one can't be sent to $InstanceUrl. " +
-            "Generating a new one now lets pairing complete. If this SAME app registration is also used by another PatchPilot instance that's already paired, that instance's stored secret will stop working until its .env is updated with the new value."
-        if ($PSCmdlet.ShouldContinue($rotateQuery, "Generate a new client secret to complete pairing?")) {
-            $needsFreshSecretForPairing = $true
+    if ($useCertificate) {
+        # Register the instance's public certificate as a credential on the
+        # app. Graph's PATCH replaces the whole keyCredentials collection, so
+        # the existing entries are sent back, unchanged, alongside the new one
+        # - see Get-AppKeyCredentials. Client secrets are a separate
+        # collection and are not touched here - see the revoke step after
+        # pairing.
+        $certBytes = [Convert]::FromBase64String($CertificateBase64)
+        $x509 = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([byte[]]$certBytes)
+        $newKeyCredential = @{
+            displayName   = "PatchPilot-Deploy-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
+            type          = "AsymmetricX509Cert"
+            usage         = "Verify"
+            key           = $CertificateBase64
+            startDateTime = $x509.NotBefore.ToUniversalTime()
+            endDateTime   = $x509.NotAfter.ToUniversalTime()
         }
-        else {
-            Write-WarningMessage "Keeping the existing secret. Pairing will be skipped this run - re-run and accept this prompt (or pass -RotateClientSecret) when ready."
-        }
-    }
 
-    if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret -and -not $needsFreshSecretForPairing) {
-        Write-Success "Existing valid PatchPilot client secret found. No new secret generated."
-        Write-WarningMessage "Existing client secret values cannot be retrieved from Entra ID. Use -RotateClientSecret if you need a new value for .env."
+        if ($PSCmdlet.ShouldProcess($app.AppId, "Add certificate credential")) {
+            $keyCredentials = @(Get-AppKeyCredentials -ApplicationObjectId $app.Id) + @($newKeyCredential)
+            Set-AppKeyCredentials -ApplicationObjectId $app.Id -KeyCredentials $keyCredentials
+            $certificateAdded = $newKeyCredential
+            # SHA-256, matching what Setup -> App Registration shows.
+            $certThumbprint = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($certBytes)) -replace '-', ''
+            Write-Success "Registered the instance's certificate (SHA-256 thumbprint $certThumbprint, expires $($x509.NotAfter)). No client secret was created."
+        }
     }
     else {
-        if ($PSCmdlet.ShouldProcess($app.AppId, "Add password credential")) {
-            $secret = Add-MgApplicationPassword -ApplicationId $app.Id -PasswordCredential @{
-                DisplayName = "PatchPilot-Deploy-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
-                EndDateTime = (Get-Date).AddDays(90)
-            }
+        if ($RotateClientSecret) {
+            Write-WarningMessage "RotateClientSecret specified. A new secret will be generated."
+        }
 
-            # The value is NOT printed here: this whole run is captured by
-            # Start-Transcript, so anything written to the console lands in a
-            # plain-text log in $OutputFolder too. Step [14/15] writes it to
-            # the env file (and step [15/15] sends it to a pairing instance);
-            # it's only shown on screen if neither of those happens.
-            Write-Success "Generated new client secret (expires $($secret.EndDateTime))."
+        # An existing secret proves a *usable* app registration exists, but its
+        # value can never be retrieved from Entra ID again - and step [15/15]
+        # needs the real value to hand to the instance. Reusing it silently would
+        # mean pairing can never complete on this run, with no error anywhere.
+        $needsFreshSecretForPairing = $false
+        if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret -and $pairingRequested) {
+            Write-WarningMessage "Existing client secret values cannot be retrieved from Entra ID, but this instance still needs pairing."
+            $rotateQuery = "App registration $($app.AppId) already has a valid secret, but Entra ID never returns a secret's value after creation, so the existing one can't be sent to $InstanceUrl. " +
+                "Generating a new one now lets pairing complete. If this SAME app registration is also used by another PatchPilot instance that's already paired, that instance's stored secret will stop working until its .env is updated with the new value."
+            if ($PSCmdlet.ShouldContinue($rotateQuery, "Generate a new client secret to complete pairing?")) {
+                $needsFreshSecretForPairing = $true
+            }
+            else {
+                Write-WarningMessage "Keeping the existing secret. Pairing will be skipped this run - re-run and accept this prompt (or pass -RotateClientSecret) when ready."
+            }
+        }
+
+        if ($validExistingPatchPilotSecrets.Count -gt 0 -and -not $RotateClientSecret -and -not $needsFreshSecretForPairing) {
+            Write-Success "Existing valid PatchPilot client secret found. No new secret generated."
+            Write-WarningMessage "Existing client secret values cannot be retrieved from Entra ID. Use -RotateClientSecret if you need a new value for .env."
+        }
+        else {
+            if ($PSCmdlet.ShouldProcess($app.AppId, "Add password credential")) {
+                $secret = Add-MgApplicationPassword -ApplicationId $app.Id -PasswordCredential @{
+                    DisplayName = "PatchPilot-Deploy-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
+                    EndDateTime = (Get-Date).AddDays(90)
+                }
+
+                # The value is NOT printed here: this whole run is captured by
+                # Start-Transcript, so anything written to the console lands in a
+                # plain-text log in $OutputFolder too. Step [14/15] writes it to
+                # the env file (and step [15/15] sends it to a pairing instance);
+                # it's only shown on screen if neither of those happens.
+                Write-Success "Generated new client secret (expires $($secret.EndDateTime))."
+            }
         }
     }
 
@@ -1796,8 +1928,13 @@ try {
     Write-Step "[14/15] Writing .env file..."
 
     if (-not $secret) {
-        Write-WarningMessage "Skipped .env secret update because no new client secret was generated."
-        Write-WarningMessage "If you need a fresh .env with a new secret, re-run with -RotateClientSecret."
+        if ($certificateAdded) {
+            Write-Host "  Skipped .env credential update - the instance authenticates with its own certificate, whose private key never leaves it." -ForegroundColor DarkGray
+        }
+        else {
+            Write-WarningMessage "Skipped .env secret update because no new client secret was generated."
+            Write-WarningMessage "If you need a fresh .env with a new secret, re-run with -RotateClientSecret."
+        }
 
         if ($readOnlyGroupId -or $writeGroupId) {
             if ($PSScriptRoot) {
@@ -1945,7 +2082,7 @@ LOG_LEVEL=info
     if (-not $pairingRequested) {
         Write-Host "  Skipped - no -InstanceUrl/-PairingToken supplied (self-hosted .env config above is authoritative)." -ForegroundColor DarkGray
     }
-    elseif (-not $secret) {
+    elseif (-not $secret -and -not $certificateAdded) {
         # Reachable when step [7/15]'s rotation prompt was declined (or this
         # run used -WhatIf) - the app registration exists but no secret VALUE
         # is available to send.
@@ -1995,10 +2132,18 @@ LOG_LEVEL=info
         }
 
         $pairingBody = @{
-            token        = $PairingToken
-            clientId     = $app.AppId
-            tenantId     = $MspTenantId
-            clientSecret = $secret.SecretText
+            token    = $PairingToken
+            clientId = $app.AppId
+            tenantId = $MspTenantId
+        }
+        if ($certificateAdded) {
+            # Nothing secret to send: the instance already holds the private
+            # key for the certificate registered in step [7/15].
+            $pairingBody.credentialType = "certificate"
+        }
+        else {
+            $pairingBody.credentialType = "secret"
+            $pairingBody.clientSecret = $secret.SecretText
         }
         # Sent only when actually known: a JSON `null` here fails the
         # server's zod validation for the whole request (adminUpn is
@@ -2097,7 +2242,43 @@ LOG_LEVEL=info
         }
     }
 
-    if ($secret) {
+    if ($certificateAdded -and $paired) {
+        # The instance now authenticates with the new certificate, so older
+        # PatchPilot certificates on the app are dead weight. Same
+        # replace-the-collection mechanics as step [7/15]: send back everything
+        # unchanged except the older PatchPilot-Deploy-* certificates.
+        $refreshedKeys = @(Get-AppKeyCredentials -ApplicationObjectId $app.Id)
+        $olderCerts = @(
+            $refreshedKeys | Where-Object {
+                $_.displayName -like "PatchPilot-Deploy-*" -and $_.displayName -ne $certificateAdded.displayName
+            }
+        )
+        if ($olderCerts.Count -gt 0) {
+            $olderList = ($olderCerts | ForEach-Object { "$($_.displayName) (expires $($_.endDateTime))" }) -join ", "
+            $revokeQuery = "The paired instance now uses the new certificate. Remove the $($olderCerts.Count) older PatchPilot certificate(s) on app $($app.AppId)? $olderList. " +
+                "Anything else still using one of them (e.g. another instance sharing this app registration) will stop authenticating."
+            if ($RevokeOldClientSecrets -or $PSCmdlet.ShouldContinue($revokeQuery, "Remove older certificates?")) {
+                $olderKeyIds = @($olderCerts | ForEach-Object { $_.keyId })
+                $keep = @($refreshedKeys | Where-Object { $olderKeyIds -notcontains $_.keyId })
+                if ($PSCmdlet.ShouldProcess($app.AppId, "Remove $($olderCerts.Count) older certificate credential(s)")) {
+                    try {
+                        Set-AppKeyCredentials -ApplicationObjectId $app.Id -KeyCredentials $keep
+                        Write-Success "Removed $($olderCerts.Count) older PatchPilot certificate(s)."
+                    }
+                    catch {
+                        Write-WarningMessage "Could not remove older certificates: $($_.Exception.Message)"
+                    }
+                }
+            }
+            else {
+                Write-WarningMessage "Kept $($olderCerts.Count) older certificate(s). Remove them in Entra ID (App registrations -> $($app.AppId) -> Certificates & secrets) once nothing uses them."
+            }
+        }
+    }
+
+    if ($secret -or ($certificateAdded -and $paired)) {
+        # After a certificate pairing every PatchPilot client secret is
+        # unused by this instance ($secret is null, so none is excluded).
         $olderSecrets = @(
             $existingPasswordCredentials |
                 Where-Object { $_.DisplayName -like "PatchPilot-Deploy-*" -and $_.KeyId -ne $secret.KeyId }
@@ -2108,7 +2289,7 @@ LOG_LEVEL=info
                 # Safe to retire the old ones only once the instance actually
                 # holds the new one - otherwise this would cut off a running
                 # instance still using an older secret.
-                $revokeQuery = "The paired instance now uses the new secret. Revoke the $($olderSecrets.Count) older PatchPilot client secret(s) on app $($app.AppId)? $olderList. " +
+                $revokeQuery = "The paired instance now uses the new credential. Revoke the $($olderSecrets.Count) older PatchPilot client secret(s) on app $($app.AppId)? $olderList. " +
                     "Anything else still using one of them (e.g. another instance sharing this app registration) will stop authenticating."
                 if ($RevokeOldClientSecrets -or $PSCmdlet.ShouldContinue($revokeQuery, "Revoke older client secrets?")) {
                     foreach ($old in $olderSecrets) {

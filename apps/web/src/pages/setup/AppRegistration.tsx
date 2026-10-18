@@ -10,7 +10,12 @@ import {
   type DomainType,
   type DomainAvailability,
 } from "../../lib/api";
-import { GRAPH_WRITE_GATED_SCOPES, DEFENDER_WRITE_GATED_SCOPES } from "@patchpilot/shared";
+import {
+  GRAPH_WRITE_GATED_SCOPES,
+  DEFENDER_WRITE_GATED_SCOPES,
+  type EntraCredentialSummary,
+  type EntraCredentialType,
+} from "@patchpilot/shared";
 import { Card, PageHeader, CopyButton } from "../../components/ui";
 import { ScopeList } from "../../components/ScopeList";
 import { useCan } from "../../lib/auth";
@@ -1130,8 +1135,90 @@ function RegistrationCommands({ demoMode }: { demoMode: boolean }) {
  * maintenance action on the identity above, not a one-time setup step.
  * Hidden in demo mode, where nothing here could authorize anything real.
  */
-function RotateClientSecretSection({ demoMode }: { demoMode: boolean }) {
+/** Under this many days to expiry, the certificate line turns amber. */
+const CERTIFICATE_WARNING_DAYS = 30;
+
+/**
+ * How this instance authenticates to Entra. A certificate pairing (the
+ * default for a downloaded pairing script) keeps its private key on this
+ * instance, so the only thing to watch is its expiry; a client secret is the
+ * legacy / self-hosted .env path.
+ */
+/**
+ * Each credential type's badge, coloured by how much an attacker gains from
+ * a copy of the instance's disk or database: a client secret is a bearer
+ * string usable from anywhere (highest risk); a certificate's private key
+ * still lives on the instance, but nothing replayable is stored in Entra or
+ * sent over the network (moderate). Key Vault and managed identity will slot
+ * in below these as lower-risk options.
+ */
+const CREDENTIAL_BADGES: Record<EntraCredentialType, { label: string; risk: string; className: string }> = {
+  secret: {
+    label: "Client secret",
+    risk: "Higher risk",
+    className: "bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300",
+  },
+  certificate: {
+    label: "Certificate",
+    risk: "Moderate risk",
+    className: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  },
+};
+
+function CredentialField({ credential }: { credential: EntraCredentialSummary }) {
+  const badge = CREDENTIAL_BADGES[credential.type];
+  const expiresAt = credential.expiresAt ? new Date(credential.expiresAt) : null;
+  const daysLeft = expiresAt ? Math.floor((expiresAt.getTime() - Date.now()) / 86_400_000) : null;
+  const expiring = daysLeft !== null && daysLeft < CERTIFICATE_WARNING_DAYS;
+  return (
+    <div className="sm:col-span-2">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        Credential
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}
+        >
+          {badge.label} · {badge.risk}
+        </span>
+        {expiresAt && <span>Expires {expiresAt.toLocaleDateString()}</span>}
+      </div>
+      {credential.type === "secret" && (
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          A client secret works from anywhere it&apos;s copied to. To switch to a
+          certificate, whose private key never leaves this instance, download a
+          fresh PowerShell script from Step 1 and run it again.
+        </p>
+      )}
+      {credential.thumbprintSha256 && (
+        <div className="mt-1 truncate font-mono text-[11px] text-slate-500 dark:text-slate-400">
+          SHA-256 {credential.thumbprintSha256}
+        </div>
+      )}
+      {expiring && (
+        <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          {daysLeft! < 0
+            ? "The certificate has expired — sign-in and sync will fail until it's renewed."
+            : `The certificate expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`}{" "}
+          Download a fresh PowerShell script from Step 1 and run it again to
+          issue a new certificate.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RotateClientSecretSection({
+  demoMode,
+  credential,
+}: {
+  demoMode: boolean;
+  credential: EntraCredentialSummary | null;
+}) {
   if (demoMode) return null;
+  // A certificate is rotated by re-running a freshly downloaded pairing
+  // script (CredentialField says so); -RotateClientSecret doesn't apply.
+  if (credential?.type === "certificate") return null;
 
   const deployCmdWindows =
     "powershell.exe -ExecutionPolicy Bypass -File .\\Deploy-PatchPilot.ps1";
@@ -1245,6 +1332,7 @@ export function AppRegistration() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Client ID" value={report.clientId} />
               <Field label="Home tenant ID" value={report.tenantId} />
+              {report.credential && <CredentialField credential={report.credential} />}
               <div className="sm:col-span-2">
                 <div className="flex items-center gap-2">
                   <div className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
@@ -1347,7 +1435,7 @@ export function AppRegistration() {
                 </div>
               )}
               <RegistrationCommands demoMode={report.demoMode} />
-              <RotateClientSecretSection demoMode={report.demoMode} />
+              <RotateClientSecretSection demoMode={report.demoMode} credential={report.credential} />
             </div>
           </Card>
 

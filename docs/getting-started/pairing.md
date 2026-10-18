@@ -41,6 +41,23 @@ create the Entra app registration for a fresh instance:
    automatically the moment the script finishes, now holding real
    credentials.
 
+## How the instance authenticates
+
+The downloaded script carries a certificate that this instance generated
+for the pairing. The script registers only the public certificate on the app
+registration. The private key never leaves the instance: it is stored in the
+database, encrypted with `TOKEN_ENCRYPTION_KEY`. No client secret is created,
+sent over the network, or written to disk.
+
+The certificate is valid for one year. **Setup → App Registration** shows its
+expiry date and warns 30 days before it runs out. To renew it, download a
+fresh script from that page and run it again. The script can then remove the
+older PatchPilot certificates and client secrets from the app.
+
+To pair with a client secret instead (the older behavior), run the script
+with `-CredentialType Secret`. Running the script from a git clone, rather than
+as a download from your instance, always uses a client secret.
+
 ## Steps
 
 1. Open the running instance in a browser. If it hasn't been paired yet,

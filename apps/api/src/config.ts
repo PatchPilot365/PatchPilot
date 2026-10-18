@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ENTRA_CREDENTIAL_FIELDS, ENTRA_CREDENTIAL_TYPES, type EntraCredentialType } from "@patchpilot/shared";
 
 /**
  * Environment configuration.
@@ -39,6 +40,14 @@ const EnvSchema = z.object({
   ENTRA_TENANT_ID: z.string().optional(),
   ENTRA_CLIENT_ID: z.string().optional(),
   ENTRA_CLIENT_SECRET: z.string().optional(),
+  // How the app proves its identity to Entra — see packages/graph/src/credential.ts.
+  // "secret" (default) uses ENTRA_CLIENT_SECRET; "certificate" uses the key
+  // pair below. A paired instance never sets these by hand: load-env.ts fills
+  // them from the `entra-app-registration` settings row, where the private key
+  // lives encrypted under TOKEN_ENCRYPTION_KEY.
+  ENTRA_CREDENTIAL_TYPE: z.enum(ENTRA_CREDENTIAL_TYPES).default("secret"),
+  ENTRA_CERTIFICATE_PRIVATE_KEY: z.string().optional(),
+  ENTRA_CERTIFICATE_THUMBPRINT_SHA256: z.string().optional(),
   // The delegated scope the app exposes on itself ("Expose an API"). Requested at
   // login so the engineer's session token is audience=PatchPilot, which is then
   // used as the OBO assertion. Defaults to api://{clientId}/access_as_user.
@@ -145,6 +154,9 @@ export interface Config {
   ENTRA_TENANT_ID: string;
   ENTRA_CLIENT_ID: string;
   ENTRA_CLIENT_SECRET: string;
+  ENTRA_CREDENTIAL_TYPE: EntraCredentialType;
+  ENTRA_CERTIFICATE_PRIVATE_KEY: string;
+  ENTRA_CERTIFICATE_THUMBPRINT_SHA256: string;
   ENTRA_API_SCOPE: string;
   /**
    * True once a real Entra app registration is in place (env/`.env` or a
@@ -214,6 +226,10 @@ export function loadConfig(): Config {
       ENTRA_TENANT_ID: env.ENTRA_TENANT_ID ?? DEMO_DEFAULTS.ENTRA_TENANT_ID,
       ENTRA_CLIENT_ID: clientId,
       ENTRA_CLIENT_SECRET: env.ENTRA_CLIENT_SECRET ?? DEMO_DEFAULTS.ENTRA_CLIENT_SECRET,
+      // Demo mode never talks to Entra, so it always reports the plain secret type.
+      ENTRA_CREDENTIAL_TYPE: "secret",
+      ENTRA_CERTIFICATE_PRIVATE_KEY: "",
+      ENTRA_CERTIFICATE_THUMBPRINT_SHA256: "",
       ENTRA_API_SCOPE: env.ENTRA_API_SCOPE ?? `api://${clientId}/access_as_user`,
       ENTRA_CONFIGURED: true,
       SESSION_SECRET: env.SESSION_SECRET ?? DEMO_DEFAULTS.SESSION_SECRET,
@@ -257,8 +273,15 @@ export function loadConfig(): Config {
   // its first boot (cloud-init copies .env.example once and never touches
   // these fields again — see cloud-init.yaml) without requiring anyone to
   // hand-edit .env.
-  const entraFields = ["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET"] as const;
-  const TEMPLATE_PLACEHOLDERS: Record<(typeof entraFields)[number], string> = {
+  //
+  // Which credential fields count depends on ENTRA_CREDENTIAL_TYPE (shared
+  // with packages/graph/src/env.ts via ENTRA_CREDENTIAL_FIELDS).
+  const entraFields = [
+    "ENTRA_TENANT_ID",
+    "ENTRA_CLIENT_ID",
+    ...ENTRA_CREDENTIAL_FIELDS[env.ENTRA_CREDENTIAL_TYPE],
+  ] as const;
+  const TEMPLATE_PLACEHOLDERS: Partial<Record<(typeof entraFields)[number], string>> = {
     ENTRA_TENANT_ID: "00000000-0000-0000-0000-000000000000",
     ENTRA_CLIENT_ID: "00000000-0000-0000-0000-000000000000",
     ENTRA_CLIENT_SECRET: "replace-me",
@@ -267,9 +290,9 @@ export function loadConfig(): Config {
     (k) => env[k] && env[k] !== TEMPLATE_PLACEHOLDERS[k],
   ).length;
   if (entraSetCount > 0 && entraSetCount < entraFields.length) {
-    problems.push("ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET must be set together, or not at all");
+    problems.push(`${entraFields.join(", ")} must be set together, or not at all`);
   }
-  for (const k of entraFields) {
+  for (const k of ["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET"] as const) {
     if (env[k] && env[k] === DEMO_DEFAULTS[k]) problems.push(`${k} still uses the demo placeholder`);
   }
   if ((env.SESSION_SECRET?.length ?? 0) < 16) problems.push("SESSION_SECRET must be >= 16 chars");
@@ -285,6 +308,8 @@ export function loadConfig(): Config {
     ENTRA_TENANT_ID: env.ENTRA_TENANT_ID ?? "",
     ENTRA_CLIENT_ID: env.ENTRA_CLIENT_ID ?? "",
     ENTRA_CLIENT_SECRET: env.ENTRA_CLIENT_SECRET ?? "",
+    ENTRA_CERTIFICATE_PRIVATE_KEY: env.ENTRA_CERTIFICATE_PRIVATE_KEY ?? "",
+    ENTRA_CERTIFICATE_THUMBPRINT_SHA256: env.ENTRA_CERTIFICATE_THUMBPRINT_SHA256 ?? "",
     ENTRA_API_SCOPE: env.ENTRA_API_SCOPE ?? `api://${env.ENTRA_CLIENT_ID ?? ""}/access_as_user`,
     ENTRA_CONFIGURED: entraConfigured,
   };

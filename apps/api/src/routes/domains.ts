@@ -376,9 +376,10 @@ export async function domainsRoutes(app: FastifyInstance): Promise<void> {
 
       if (verified) {
         // Newly active — EXTRA_WEB_ORIGINS only picks this up on next boot.
+        // Exit scheduled before publishing — see isExitAfterReplyPending.
+        exitAfterReply(reply);
         await connection.publish(CUSTOM_DOMAINS_CHANGED_CHANNEL, "activated").catch(() => undefined);
         reply.send({ verified, domain: toDomainReport(updated!) });
-        exitAfterReply(reply);
         return;
       }
       return reply.send({ verified, domain: toDomainReport(updated!) });
@@ -415,9 +416,9 @@ export async function domainsRoutes(app: FastifyInstance): Promise<void> {
 
       if (row.status === "active") {
         // An origin is being removed from the allowlist — same restart need as activation.
+        exitAfterReply(reply);
         await connection.publish(CUSTOM_DOMAINS_CHANGED_CHANNEL, "deleted").catch(() => undefined);
         reply.send({ deleted: true });
-        exitAfterReply(reply);
         return;
       }
       return reply.send({ deleted: true });

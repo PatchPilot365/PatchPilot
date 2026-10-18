@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db, tables } from "@patchpilot/db";
-import { encrypt, sha256Hex, auditSafe } from "@patchpilot/graph";
+import { encrypt, sha256Hex, auditSafe, generateSelfSignedCertificate } from "@patchpilot/graph";
 import { SYSTEM_ACTORS, can, CREDENTIALS_ROTATED_CHANNEL, currentScopeBaseline } from "@patchpilot/shared";
 import { config } from "../config.js";
 import { connection } from "../queue.js";
@@ -35,6 +35,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // and `node dist/index.js` (prod) without an env var or build-time copy step.
 const DEPLOY_SCRIPT_PATH = join(__dirname, "../../../../scripts/Deploy-PatchPilot.ps1");
 
+// Guards what gets spliced into the script as a PowerShell string literal.
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // A first-ever run installs the Microsoft.Graph PowerShell module (which can
 // take 5-15+ minutes on a machine with nothing cached), then does interactive
 // sign-in, GDAP enumeration, and role-assignment loops with backoff before
@@ -42,11 +45,22 @@ const DEPLOY_SCRIPT_PATH = join(__dirname, "../../../../scripts/Deploy-PatchPilo
 // minutes on a slow first run.
 const PAIRING_TOKEN_TTL_MS = 60 * 60 * 1000;
 
+// Validity of the instance-generated certificate credential. Setup -> App
+// Registration warns from 30 days out; rotating is just downloading and
+// running a fresh pairing script.
+const CERTIFICATE_VALIDITY_DAYS = 365;
+
 const pairBodySchema = z.object({
   token: z.string().min(1),
   clientId: z.string().min(1),
   tenantId: z.string().min(1),
-  clientSecret: z.string().min(1),
+  // "secret" by default so a script downloaded before certificate pairing
+  // existed (or a manual caller) still pairs exactly as before. "certificate"
+  // means the script registered the public certificate this token was issued
+  // with; the private key is already here, on the token row, and is never
+  // accepted from the request body.
+  credentialType: z.enum(["secret", "certificate"]).default("secret"),
+  clientSecret: z.string().min(1).optional(),
   // Optional: the UPN Deploy-PatchPilot.ps1 was signed in to Microsoft Graph
   // as when it created the app registration ($context.Account — see the
   // script's Connect-MgGraph section). Lets a fresh pairing self-provision
@@ -72,6 +86,8 @@ const pairBodySchema = z.object({
   // must never be the reason the whole pairing request 400s.
   readOnlyGroupId: z.string().min(1).nullish(),
   writeGroupId: z.string().min(1).nullish(),
+}).refine((b) => b.credentialType !== "secret" || b.clientSecret, {
+  message: "clientSecret is required when credentialType is secret",
 });
 
 export async function onboardingPairingRoutes(app: FastifyInstance): Promise<void> {
@@ -110,10 +126,34 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
         return reply.code(400).send({ error: "invalid_or_expired_token" });
       }
 
+      let credential:
+        | { credentialType: "secret"; clientSecretEncrypted: string }
+        | {
+            credentialType: "certificate";
+            certificatePem: string;
+            privateKeyEncrypted: string;
+            thumbprintSha256: string;
+          };
+      if (body.credentialType === "certificate") {
+        if (!tokenRow.certificatePem || !tokenRow.privateKeyEncrypted || !tokenRow.thumbprintSha256) {
+          // Only reachable with a token issued before certificate pairing
+          // existed, or a hand-built request. The token is spent either way.
+          return reply.code(400).send({ error: "token_has_no_certificate" });
+        }
+        credential = {
+          credentialType: "certificate",
+          certificatePem: tokenRow.certificatePem,
+          privateKeyEncrypted: tokenRow.privateKeyEncrypted,
+          thumbprintSha256: tokenRow.thumbprintSha256,
+        };
+      } else {
+        credential = { credentialType: "secret", clientSecretEncrypted: encrypt(body.clientSecret!) };
+      }
+
       const value = {
         clientId: body.clientId,
         tenantId: body.tenantId,
-        clientSecretEncrypted: encrypt(body.clientSecret),
+        ...credential,
         pairedAt: new Date().toISOString(),
         pairedBy: SYSTEM_ACTORS.onboardingPairing,
       };
@@ -124,6 +164,15 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
           target: tables.settings.key,
           set: { value, updatedAt: new Date() },
         });
+
+      // The key now lives in the settings row; don't leave a second copy on a
+      // spent token.
+      if (credential.credentialType === "certificate") {
+        await db
+          .update(tables.onboardingPairingTokens)
+          .set({ privateKeyEncrypted: null })
+          .where(eq(tables.onboardingPairingTokens.id, tokenRow.id));
+      }
 
       // Best-effort, additive only: never overwrite an admin UPN a previous
       // pairing (or a manual BOOTSTRAP_ADMIN_UPN in .env) already established.
@@ -205,7 +254,10 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
         action: "onboarding:paired",
         resourceType: "application",
         resourceId: body.clientId,
-        summary: "Instance paired with a customer-supplied Entra app registration",
+        summary:
+          credential.credentialType === "certificate"
+            ? `Instance paired with a customer-supplied Entra app registration (certificate ${credential.thumbprintSha256})`
+            : "Instance paired with a customer-supplied Entra app registration (client secret)",
         outcome: "success",
         responseStatus: 200,
       });
@@ -213,11 +265,12 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
       // Tell every other process (and this one, on its next boot) to pick up
       // the freshly paired credentials. Compose's restart policy brings the
       // process back; load-env.ts reads the settings row we just wrote on the
-      // way in.
+      // way in. The exit is scheduled before publishing so this process's own
+      // copy of the message doesn't kill it mid-reply (isExitAfterReplyPending).
+      exitAfterReply(reply);
       await connection.publish(CREDENTIALS_ROTATED_CHANNEL, "paired").catch(() => undefined);
 
       reply.send({ paired: true });
-      exitAfterReply(reply);
     },
   );
 
@@ -243,11 +296,20 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
 
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + PAIRING_TOKEN_TTL_MS);
+    // A fresh key pair per script: the script registers only the public
+    // certificate on the app; the private key never leaves this instance.
+    const certificate = generateSelfSignedCertificate(
+      `PatchPilot (${new URL(config.PUBLIC_URL).host})`,
+      CERTIFICATE_VALIDITY_DAYS,
+    );
     await db.insert(tables.onboardingPairingTokens).values({
       tokenHash: sha256Hex(token),
       redirectUri: config.AUTH_REDIRECT_URI,
       createdBy: issuedBy,
       expiresAt,
+      certificatePem: certificate.certificatePem,
+      privateKeyEncrypted: encrypt(certificate.privateKeyPem),
+      thumbprintSha256: certificate.thumbprintSha256,
     });
 
     // Strip a leading UTF-8 BOM defensively (node's readFileSync("utf8") does
@@ -265,7 +327,21 @@ export async function onboardingPairingRoutes(app: FastifyInstance): Promise<voi
     const script = template
       .replace(/\{\{INSTANCE_URL\}\}/g, config.PUBLIC_URL)
       .replace(/\{\{PAIRING_TOKEN\}\}/g, token)
-      .replace(/\{\{REDIRECT_URI\}\}/g, config.AUTH_REDIRECT_URI);
+      .replace(/\{\{REDIRECT_URI\}\}/g, config.AUTH_REDIRECT_URI)
+      // Once paired, default the script to this instance's own tenant so a
+      // re-pair doesn't fall back to auto-detecting whatever Azure session
+      // the admin's machine happens to hold. Unpaired: left as a placeholder
+      // (the script treats that as "not supplied").
+      .replace(
+        /\{\{MSP_TENANT_ID\}\}/g,
+        config.ENTRA_CONFIGURED && GUID_RE.test(config.ENTRA_TENANT_ID) ? config.ENTRA_TENANT_ID : "{{MSP_TENANT_ID}}",
+      )
+      // Base64 body only (no PEM armour or newlines), so it drops into a
+      // single-quoted PowerShell string.
+      .replace(
+        /\{\{CERTIFICATE_BASE64\}\}/g,
+        certificate.certificatePem.replace(/-----[A-Z ]+-----|\s/g, ""),
+      );
 
     await auditSafe({
       engineer: issuedBy,

@@ -4,6 +4,7 @@ import { CREDENTIALS_ROTATED_CHANNEL, CUSTOM_DOMAINS_CHANGED_CHANNEL } from "@pa
 import { buildServer } from "./server.js";
 import { config } from "./config.js";
 import { connection } from "./queue.js";
+import { isExitAfterReplyPending } from "./restart-after-reply.js";
 import { startAutoSync } from "./graph/auto-sync.js";
 import { startCatalogRefresh } from "./catalog/auto-refresh.js";
 import { startChocolateyCatalogRefresh } from "./catalog/chocolatey-auto-refresh.js";
@@ -96,6 +97,9 @@ if (!config.DEMO_MODE) {
   await credentialsSubscriber.subscribe(CUSTOM_DOMAINS_CHANGED_CHANNEL);
   credentialsSubscriber.on("message", (channel) => {
     if (channel !== CREDENTIALS_ROTATED_CHANNEL && channel !== CUSTOM_DOMAINS_CHANGED_CHANNEL) return;
+    // This process published it and is already restarting once its reply
+    // is written — see isExitAfterReplyPending.
+    if (isExitAfterReplyPending()) return;
     app.log.info(`${channel} — exiting so the process manager restarts us with fresh config`);
     process.exit(0);
   });
