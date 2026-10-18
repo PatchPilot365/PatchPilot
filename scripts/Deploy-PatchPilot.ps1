@@ -1993,6 +1993,8 @@ try {
         $sessionSecret = New-Base64Key
         $tokenKey      = New-Base64Key
         $pgPassword    = New-Base64Key
+        # Hex, not base64: it's embedded in REDIS_URL by docker-compose.yml.
+        $redisPassword = -join ([System.Convert]::FromBase64String((New-Base64Key)) | ForEach-Object { $_.ToString("x2") })
 
         # PUBLIC_URL and CORS_ORIGINS are origins (scheme://host:port) - the
         # browser's Origin header never carries a path, so a full redirect URI
@@ -2025,7 +2027,8 @@ DATABASE_URL=postgres://patchpilot:$pgPasswordEnc@postgres:5432/patchpilot
 
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_URL=redis://redis:6379
+REDIS_URL=redis://:$redisPassword@redis:6379
+REDIS_PASSWORD=$redisPassword
 
 API_PORT=4000
 CORS_ORIGINS=$redirectOrigin

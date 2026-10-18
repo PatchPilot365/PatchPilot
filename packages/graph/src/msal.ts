@@ -118,11 +118,11 @@ function cachePluginFor(engineerUpn: string): ICachePlugin {
   return {
     async beforeCacheAccess(ctx: TokenCacheContext): Promise<void> {
       const raw = await redis.get(cacheKey);
-      if (raw) ctx.tokenCache.deserialize(decrypt(raw));
+      if (raw) ctx.tokenCache.deserialize(decrypt(raw, cacheKey));
     },
     async afterCacheAccess(ctx: TokenCacheContext): Promise<void> {
       if (ctx.cacheHasChanged) {
-        await redis.set(cacheKey, encrypt(ctx.tokenCache.serialize()), "EX", MSAL_CACHE_TTL_SECONDS);
+        await redis.set(cacheKey, encrypt(ctx.tokenCache.serialize(), cacheKey), "EX", MSAL_CACHE_TTL_SECONDS);
       }
     },
   };
@@ -183,9 +183,10 @@ export async function redeemLoginCode(code: string, redirectUri: string): Promis
   if (!result?.account) {
     throw new Error("Login code redemption returned no account");
   }
+  const cacheKey = msalCacheKey(accountUpn(result.account));
   await redis.set(
-    msalCacheKey(accountUpn(result.account)),
-    encrypt(client.getTokenCache().serialize()),
+    cacheKey,
+    encrypt(client.getTokenCache().serialize(), cacheKey),
     "EX",
     MSAL_CACHE_TTL_SECONDS,
   );

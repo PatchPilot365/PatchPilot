@@ -92,6 +92,7 @@ runcmd:
     SESSION_SECRET=$(openssl rand -base64 32)
     TOKEN_KEY=$(openssl rand -base64 32)
     PG_PASS=$(openssl rand -base64 24 | tr -d '/+=')
+    REDIS_PASS=$(openssl rand -hex 32)
     ENV_FILE=/opt/patchpilot/.env
     sed -i "s#^PUBLIC_URL=.*#PUBLIC_URL=https://${DOMAIN}#" "$ENV_FILE"
     sed -i "s#^PP_DOMAIN=.*#PP_DOMAIN=${DOMAIN}#" "$ENV_FILE"
@@ -101,6 +102,7 @@ runcmd:
     sed -i "s#^TOKEN_ENCRYPTION_KEY=.*#TOKEN_ENCRYPTION_KEY=${TOKEN_KEY}#" "$ENV_FILE"
     sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=${PG_PASS}#" "$ENV_FILE"
     sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgres://patchpilot:${PG_PASS}@postgres:5432/patchpilot#" "$ENV_FILE"
+    sed -i "s#^REDIS_PASSWORD=.*#REDIS_PASSWORD=${REDIS_PASS}#" "$ENV_FILE"
     sed -i "s#^DEMO_MODE=.*#DEMO_MODE=false#" "$ENV_FILE"
     # ENTRA_* stays at its placeholder value on purpose — the app boots with
     # no Entra credentials and serves the "Pair this instance" setup screen
