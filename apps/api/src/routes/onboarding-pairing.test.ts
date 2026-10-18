@@ -281,6 +281,62 @@ describe("POST /api/onboarding/pair", () => {
     expect(tokenRows()[0]!.consumedAt).toBeNull();
   });
 
+  it("pairs a managed identity with no credential stored and clears the token's unused key", async () => {
+    const app = await buildApp();
+    const { token } = await downloadScript(app);
+    const miClientId = "11111111-2222-3333-4444-555555555555";
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/onboarding/pair",
+      payload: {
+        token,
+        clientId: "client-1",
+        tenantId: "tenant-1",
+        credentialType: "managed-identity",
+        managedIdentityClientId: miClientId,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const value = settingsRow("entra-app-registration")!.value as Row;
+    expect(value).toMatchObject({ credentialType: "managed-identity", managedIdentityClientId: miClientId });
+    expect(value).not.toHaveProperty("clientSecretEncrypted");
+    expect(value).not.toHaveProperty("privateKeyEncrypted");
+    expect(tokenRows()[0]!.privateKeyEncrypted).toBeNull();
+  });
+
+  it("pairs a system-assigned managed identity without a client ID", async () => {
+    const app = await buildApp();
+    const { token } = await downloadScript(app);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/onboarding/pair",
+      payload: { token, clientId: "client-1", tenantId: "tenant-1", credentialType: "managed-identity" },
+    });
+    expect(res.statusCode).toBe(200);
+    const value = settingsRow("entra-app-registration")!.value as Row;
+    expect(value.credentialType).toBe("managed-identity");
+    expect(value).not.toHaveProperty("managedIdentityClientId");
+  });
+
+  it("rejects a managed identity client ID that isn't a GUID, or on another credential type, before spending the token", async () => {
+    const app = await buildApp();
+    const { token } = await downloadScript(app);
+    for (const payload of [
+      { token, clientId: "c", tenantId: "t", credentialType: "managed-identity", managedIdentityClientId: "nope" },
+      {
+        token,
+        clientId: "c",
+        tenantId: "t",
+        clientSecret: "s3cret",
+        managedIdentityClientId: "11111111-2222-3333-4444-555555555555",
+      },
+    ]) {
+      const res = await app.inject({ method: "POST", url: "/api/onboarding/pair", payload });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(tokenRows()[0]!.consumedAt).toBeNull();
+  });
+
   it("rejects a certificate pairing against a token issued without a certificate", async () => {
     const app = await buildApp();
     tableRows.set(tables.onboardingPairingTokens, [

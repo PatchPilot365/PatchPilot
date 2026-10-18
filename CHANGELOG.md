@@ -12,6 +12,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Added: an instance on an Azure VM can authenticate to Entra with the VM's
+  managed identity, so it stores no credential at all. Run the pairing script
+  with `-CredentialType ManagedIdentity -ManagedIdentityObjectId <principalId>`;
+  it registers the identity as a federated credential on the app. The Azure
+  deployment now gives the VM a system-assigned identity (with no roles) and
+  outputs its `principalId`.
+- Added: the client secret or certificate can be kept in Azure Key Vault and
+  read with the VM's managed identity (`ENTRA_KEY_VAULT_URL` plus
+  `ENTRA_KEY_VAULT_SECRET_NAME` or `ENTRA_KEY_VAULT_CERTIFICATE_NAME`). A Key
+  Vault certificate's key never leaves the vault: Key Vault signs each
+  sign-in. Both options are opt-in and Azure-only; see
+  `infra/azure/README.md`.
 - Security: a newly paired instance now authenticates to Entra with a
   certificate instead of a client secret. The instance generates the key pair
   itself when you download the pairing script, and the script registers only

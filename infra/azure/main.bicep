@@ -155,6 +155,12 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
 resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   name: vmName
   location: location
+  // Unused unless the operator opts in: lets PatchPilot authenticate to Entra
+  // as this VM (Deploy-PatchPilot.ps1 -CredentialType ManagedIdentity) and/or
+  // read a credential from Key Vault. Granted no roles here. See README.md.
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     hardwareProfile: {
       vmSize: vmSize
@@ -242,3 +248,5 @@ resource waitForAppReady 'Microsoft.Compute/virtualMachines/runCommands@2024-03-
 output fqdn string = resolvedDomain
 output publicIpAddress string = publicIp.properties.ipAddress
 output url string = 'https://${resolvedDomain}'
+@description('Object (principal) ID of the VM system-assigned managed identity, for Deploy-PatchPilot.ps1 -ManagedIdentityObjectId.')
+output principalId string = vm.identity.principalId
