@@ -1721,6 +1721,15 @@ export const onboardingPairingTokens = pgTable(
     // enum, so consumption is one indexed WHERE clause rather than a read then
     // a separate write.
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    // The instance-generated certificate credential baked into this token's
+    // script (see packages/graph/src/x509.ts). Only the public certificate is
+    // in the script; the private key stays here, encrypted under
+    // TOKEN_ENCRYPTION_KEY, until a successful pairing copies it into the
+    // `entra-app-registration` settings row and clears it from this row. Null
+    // on tokens issued before certificate pairing existed.
+    certificatePem: text("certificate_pem"),
+    privateKeyEncrypted: text("private_key_encrypted"),
+    thumbprintSha256: text("thumbprint_sha256"),
   },
   (t) => [
     uniqueIndex("onboarding_pairing_tokens_hash_idx").on(t.tokenHash),

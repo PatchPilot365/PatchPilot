@@ -64,11 +64,29 @@ async function loadPairedEntraCredentials(): Promise<void> {
       .where(eq(tables.settings.key, "entra-app-registration"));
     if (!row) return;
 
-    const value = row.value as { clientId: string; tenantId: string; clientSecretEncrypted: string };
+    // credentialType is absent on every row written before certificate
+    // pairing existed — those are all client secrets. The row's type always
+    // wins over ENTRA_CREDENTIAL_TYPE from env/`.env`, same precedence as the
+    // credentials themselves.
+    const value = row.value as {
+      clientId: string;
+      tenantId: string;
+      credentialType?: "secret" | "certificate";
+      clientSecretEncrypted?: string;
+      privateKeyEncrypted?: string;
+      thumbprintSha256?: string;
+    };
     const tokenKey = process.env.TOKEN_ENCRYPTION_KEY ?? "demo-encryption-key-not-for-production-0";
     process.env.ENTRA_CLIENT_ID = value.clientId;
     process.env.ENTRA_TENANT_ID = value.tenantId;
-    process.env.ENTRA_CLIENT_SECRET = decryptPairedSecret(value.clientSecretEncrypted, tokenKey);
+    if (value.credentialType === "certificate") {
+      process.env.ENTRA_CREDENTIAL_TYPE = "certificate";
+      process.env.ENTRA_CERTIFICATE_PRIVATE_KEY = decryptPairedSecret(value.privateKeyEncrypted ?? "", tokenKey);
+      process.env.ENTRA_CERTIFICATE_THUMBPRINT_SHA256 = value.thumbprintSha256 ?? "";
+    } else {
+      process.env.ENTRA_CREDENTIAL_TYPE = "secret";
+      process.env.ENTRA_CLIENT_SECRET = decryptPairedSecret(value.clientSecretEncrypted ?? "", tokenKey);
+    }
   } catch (err) {
     // Boot must not hard-fail on a transient DB hiccup here — @patchpilot/graph's
     // own env validation below still runs, and will reject the boot if no

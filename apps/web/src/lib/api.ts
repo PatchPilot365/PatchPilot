@@ -6,6 +6,7 @@ import type {
   AuditCategory,
   AuditOutcome,
   DeviceExclusionJustification,
+  EntraCredentialSummary,
   InstallScope,
   RemediationAction,
   RestartableContainer,
@@ -875,6 +876,9 @@ export interface OnboardingReport {
   /** Live per-scope status from the last "Test Connection" run — null until
    * one has ever been run. See routes/onboarding.ts. */
   scopeStatus: { checkedAt: string; results: ScopeStatusEntry[]; licensing?: LicenseCheckResult } | null;
+  /** How this instance authenticates to Entra — null in demo mode or before
+   * it has an app registration. See routes/onboarding.ts. */
+  credential: EntraCredentialSummary | null;
   consentTargets: ConsentTarget[];
 }
 

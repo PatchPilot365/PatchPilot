@@ -43,4 +43,7 @@ These hold regardless of which path you choose:
    Entra app registration.** The in-app "Sync permissions" action can
    refresh scopes on an app the script already created, but never creates
    one itself.
-8. **Secrets live in `.env`** with locked-down file permissions.
+8. **Secrets live in `.env`** with locked-down file permissions, or, for a
+   paired instance, encrypted in the database. A paired instance
+   authenticates to Entra with a certificate whose private key never leaves
+   the server.

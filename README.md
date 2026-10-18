@@ -40,7 +40,9 @@ across many GDAP-linked customer tenants.
    creation** — the Entra onboarding artefact. The in-app "Sync permissions"
    action (Setup → App Registration) may refresh scopes/consent on an app the
    script already created, but never creates one.
-8. **Secrets in `.env`** with locked-down file permissions.
+8. **Secrets in `.env`** with locked-down file permissions, or, for a paired
+   instance, encrypted in the database. A paired instance authenticates to
+   Entra with a certificate whose private key never leaves the server.
 
 ---
 

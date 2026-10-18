@@ -8,6 +8,8 @@
  */
 export { env, loadEnv, type GraphEnv } from "./env.js";
 export { encrypt, decrypt, payloadHash, sha256Hex } from "./crypto.js";
+export { getMsalCredential, describeEntraCredential } from "./credential.js";
+export { generateSelfSignedCertificate, type SelfSignedCertificate } from "./x509.js";
 export {
   storeToken,
   getToken,

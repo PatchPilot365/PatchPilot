@@ -26,3 +26,4 @@ export * from "./job-outcomes.js";
 export * from "./checkin.js";
 export * from "./health-thresholds.js";
 export * from "./server-control.js";
+export * from "./entra-credential.js";

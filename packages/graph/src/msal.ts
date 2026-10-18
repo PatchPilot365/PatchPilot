@@ -6,6 +6,7 @@ import {
   type TokenCacheContext,
 } from "@azure/msal-node";
 import { env } from "./env.js";
+import { getMsalCredential } from "./credential.js";
 import { encrypt, decrypt } from "./crypto.js";
 import { redis } from "./token-store.js";
 
@@ -34,7 +35,7 @@ import { redis } from "./token-store.js";
  * trip that resolves after this module's own top-level evaluation (see
  * apps/api/src/load-env.ts and apps/worker/src/load-env.ts, both of which
  * patch `env` in place once loading completes). A module-level object literal
- * would have copied `env.ENTRA_CLIENT_SECRET` as a plain string at that first,
+ * would have copied the credential (then `env.ENTRA_CLIENT_SECRET`) as a plain string at that first,
  * pre-pairing moment and never observed the correction, which is exactly what
  * caused /auth/login to fail with "Client credential ... must not be empty"
  * on a live instance right after a fresh pairing.
@@ -44,7 +45,7 @@ function getMsalConfig(): Configuration {
     auth: {
       clientId: env.ENTRA_CLIENT_ID,
       authority: `https://login.microsoftonline.com/${env.ENTRA_TENANT_ID}`,
-      clientSecret: env.ENTRA_CLIENT_SECRET,
+      ...getMsalCredential(),
     },
     system: {
       loggerOptions: {
