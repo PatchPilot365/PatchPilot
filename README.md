@@ -68,7 +68,7 @@ Tooling: **pnpm workspaces + Turborepo**. PostgreSQL (Drizzle) + Redis (BullMQ).
 Entra app**. Auth is bypassed with a demo engineer and all data is served from
 in-memory fixtures, so the console is instantly clickable.
 
-Prereqs: Node 24+, pnpm 9+.
+Prereqs: Node 24+, pnpm 10+.
 
 ```bash
 pnpm install
