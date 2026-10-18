@@ -89,13 +89,14 @@ two valid states before pairing.
 | `PUBLIC_URL` | The public HTTPS origin where PatchPilot365 is reached. |
 | `PP_DOMAIN` | Bare hostname Caddy serves and requests a Let's Encrypt certificate for. |
 | `AUTH_REDIRECT_URI` | Entra app redirect URI — must exactly match the app registration. |
-| `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` | Filled in automatically by the pairing script. Leave blank until then. |
-| `ENTRA_CREDENTIAL_TYPE` / `ENTRA_CERTIFICATE_PRIVATE_KEY` / `ENTRA_CERTIFICATE_THUMBPRINT_SHA256` | Optional. `secret` (default), `certificate` or `managed-identity`. A paired instance sets these itself from the certificate it generated during pairing; only set them by hand to use your own certificate. `managed-identity` is for Azure VMs only; see [Deploying to an Azure VM](../infra/azure/README.md#authenticate-with-the-vms-managed-identity). |
+| `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` | Leave blank until pairing. A paired instance keeps them in its own database, with the credential encrypted, and the pairing script blanks them in `.env` afterwards. `ENTRA_CLIENT_SECRET` is only needed for an install configured by hand, without pairing, that uses a client secret. |
+| `ENTRA_CREDENTIAL_TYPE` / `ENTRA_CERTIFICATE_PRIVATE_KEY` / `ENTRA_CERTIFICATE_THUMBPRINT_SHA256` | Optional. `secret` (default), `certificate` or `managed-identity`. A paired instance sets these itself from the certificate it generated during pairing; only set them by hand to use your own certificate. `managed-identity` is for Azure VMs only; see [Deploying to an Azure VM](https://github.com/PatchPilot365/PatchPilot/blob/main/infra/azure/README.md#authenticate-with-the-vms-managed-identity). |
 | `ENTRA_MANAGED_IDENTITY_CLIENT_ID` | Optional, Azure only. A user-assigned managed identity's client ID. Leave blank for the VM's system-assigned identity. |
 | `ENTRA_KEY_VAULT_URL` / `ENTRA_KEY_VAULT_SECRET_NAME` / `ENTRA_KEY_VAULT_CERTIFICATE_NAME` | Optional, Azure only. Read the client secret, or sign with a certificate, kept in Azure Key Vault, using the VM's managed identity. Name a secret for `secret` or a certificate for `certificate`. A Key Vault credential wins over a local or paired one of the same type. |
 | `SESSION_SECRET` / `TOKEN_ENCRYPTION_KEY` | 32-byte base64 keys — generate with `openssl rand -base64 32`. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_HOST` / `POSTGRES_PORT` / `DATABASE_URL` | Database connection. |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_URL` | Job queue and token cache backing. |
+| `REDIS_PASSWORD` | Optional, Docker Compose only. Turns on Redis authentication. New installs (Azure deploy and `Deploy-PatchPilot.ps1`) generate one; to add one to an existing install, set a random hex string (`openssl rand -hex 32`) and run `docker compose up -d` again. |
 | `API_PORT` | Port the Fastify API listens on. |
 | `CORS_ORIGINS` | Comma-separated origins allowed to call the API — the web app's own origin. |
 | `AUTO_SYNC_INTERVAL_MINUTES` | How often the API background-refreshes devices/vulnerabilities for reachable tenants. `0` disables it. Ignored in Demo Mode. |

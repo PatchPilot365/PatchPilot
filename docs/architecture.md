@@ -63,6 +63,35 @@ flowchart LR
     Entra --> CustC
 </pre>
 
+## How PatchPilot365 proves its own identity to Entra
+
+Every token request above is made by PatchPilot365's own app registration in
+the MSP's home tenant, and Entra makes the app prove who it is each time.
+That app credential never grants access to a tenant by itself — tokens
+still carry only the engineer's delegated roles — but it is what stops a
+stolen refresh token from being redeemed anywhere else.
+
+- **Instance-generated certificate (default).** When you download the
+  pairing script, the instance generates a key pair. The script registers
+  only the public certificate on the app; the private key stays on the
+  server, encrypted in its database. It's valid for a year, and **Setup >
+  App Registration** warns 30 days before it expires.
+- **Client secret.** Still supported for instances that paired before
+  certificates, or when you choose it. A secret can be copied and used from
+  anywhere, so it's the least protective option.
+- **Azure only, opt-in:** the VM's **managed identity**, registered on the
+  app as a federated credential, so nothing is stored on the instance at
+  all; or a certificate or secret kept in **Azure Key Vault**, where a Key
+  Vault certificate's key never leaves the vault. Neither has been verified
+  against a live Azure deployment yet.
+
+The renewable credential an overnight schedule relies on is an engineer's
+refresh token, cached in Redis. Each cache entry is encrypted and bound to
+that engineer's own cache key, so it can't be copied under another
+engineer's name, and Redis can require a password. To limit where a stolen
+token would work at all, see
+[Conditional Access]({{ "/conditional-access/" | relative_url }}).
+
 ## Remediation options, channels, and catalogs
 
 PatchPilot365 matches every finding against a set of package/script catalogs
@@ -194,7 +223,10 @@ it.
 Two networks matter, and only one is under the MSP's control:
 
 - **PatchPilot365's own server** needs outbound access to the two Microsoft
-  API hosts above, plus `login.microsoftonline.com` for auth.
+  API hosts above, plus `login.microsoftonline.com` for auth. On Azure with
+  the managed identity or Key Vault options, it also needs the VM's
+  instance metadata endpoint (`169.254.169.254`) and the vault's own host
+  (`<vault-name>.vault.azure.net`).
 - **Every managed device** needs its own outbound access for the Defender
   sensor and the Intune Management Extension — this is usually the network
   a remediation job actually stalls or fails on, not PatchPilot365's server.

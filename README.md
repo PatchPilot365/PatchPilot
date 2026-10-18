@@ -42,7 +42,11 @@ across many GDAP-linked customer tenants.
    script already created, but never creates one.
 8. **Secrets in `.env`** with locked-down file permissions, or, for a paired
    instance, encrypted in the database. A paired instance authenticates to
-   Entra with a certificate whose private key never leaves the server.
+   Entra with a certificate whose private key never leaves the server. On an
+   Azure VM it can instead use the VM's managed identity (nothing stored) or
+   a certificate or secret kept in Azure Key Vault — both opt-in. Engineers'
+   cached tokens in Redis are encrypted and bound to their own cache key, and
+   Redis can require a password (`REDIS_PASSWORD`).
 
 ---
 
@@ -122,6 +126,10 @@ domain if you have one), and an Ubuntu VM that installs Docker and brings up
 this exact stack on first boot — no SSH required for setup or day-to-day
 operation. See [`infra/azure/README.md`](infra/azure/README.md) for the full
 runbook, including switching to a custom domain later and updating the deploy.
+The VM gets a system-assigned managed identity with no roles; you can opt in to
+authenticating with it, or to keeping the app credential in Key Vault — see
+[Authenticate with the VM's managed identity](infra/azure/README.md#authenticate-with-the-vms-managed-identity)
+and [Keep the credential in Key Vault](infra/azure/README.md#keep-the-credential-in-key-vault).
 
 ### AI features (summaries, reports, chatbot)
 
@@ -251,10 +259,10 @@ script with `-RedirectUri https://<host>/auth/callback` — it flows straight in
 the app registration and the generated `.env`.
 
 > **GitHub Pages (and any static host) will NOT work.** PatchPilot completes the
-> OAuth code-for-token exchange **server-side** using the client secret, which
-> must never reach the browser. A static host can only serve the SPA shell — login
-> would be broken and there's no server to hold the secret. You need a host that
-> runs the Node/Docker stack.
+> OAuth code-for-token exchange **server-side** using the app's credential (a
+> certificate or client secret), which must never reach the browser. A static
+> host can only serve the SPA shell — login would be broken and there's no server
+> to hold the credential. You need a host that runs the Node/Docker stack.
 
 ### Where to host for testing
 
