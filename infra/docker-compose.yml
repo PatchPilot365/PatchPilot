@@ -14,8 +14,11 @@ services:
     # this deliberately, not automatically.
     image: caddy:2.11-alpine
     restart: unless-stopped
-    env_file:
-      - ../.env
+    # Only the one variable the Caddyfile reads — not the whole .env, which
+    # holds the Entra client secret and TOKEN_ENCRYPTION_KEY. Caddy is the
+    # internet-facing container, so it gets no secrets it doesn't use.
+    environment:
+      PP_DOMAIN: ${PP_DOMAIN:-patchpilot.example.com}
     ports:
       - "80:80"
       - "443:443"

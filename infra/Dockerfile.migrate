@@ -10,7 +10,7 @@ RUN corepack enable
 WORKDIR /app
 
 # Copy manifests first for layer caching.
-COPY pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 
@@ -18,7 +18,7 @@ COPY packages/db/package.json packages/db/
 # "dependencies" (not devDependencies) precisely so --prod keeps it: the CMD
 # below (`pnpm run migrate`) runs src/migrate.ts through it directly.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile=false --filter @patchpilot/db...
+    pnpm install --prod --frozen-lockfile --filter @patchpilot/db...
 
 # Copy sources.
 COPY packages/shared packages/shared

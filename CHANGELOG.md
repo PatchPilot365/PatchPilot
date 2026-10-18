@@ -12,6 +12,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+- Security: the Caddy container now gets only `PP_DOMAIN` instead of the
+  whole `.env`, so the internet-facing proxy no longer holds the Entra client
+  secret or the token encryption key.
+- Security: `Deploy-PatchPilot.ps1` no longer prints the new client secret to
+  the console. It only shows the secret when the secret wasn't saved anywhere
+  else, because the run transcript keeps a plain-text copy of anything
+  printed. After a successful pairing, the script removes the `ENTRA_*`
+  values from the local env file it wrote and offers to revoke older
+  `PatchPilot-Deploy-*` secrets on the app registration. Pass
+  `-RevokeOldClientSecrets` to revoke them without the prompt. Without
+  pairing, it lists the older secrets so you can revoke them once the
+  instance runs on the new one.
+- Development: CI, release and every Docker image now install from the
+  committed `pnpm-lock.yaml` with `--frozen-lockfile`, so a build can't
+  quietly resolve newer dependency versions. GitHub Actions are pinned to
+  commit SHAs. Workflow tokens default to read-only and aren't left in the
+  checkout.
+
 ## [1.0.15] - 2026-10-17
 
 - The Devices page now shows an amber "Not seen Nd" badge on any device that
